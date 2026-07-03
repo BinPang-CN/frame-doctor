@@ -7,3 +7,8 @@ dist/
 build/
 *.tmp
 repaired.json
+repaired_case_*.json
+case_*_before.html
+case_*_before_after.html
+*_repaired.json
+*_comparison.html

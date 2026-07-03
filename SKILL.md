@@ -27,6 +27,7 @@ For JSON-based MVP work, use the bundled scripts:
 - `scripts/apply_patch_to_json.py` to apply a patch.
 - `scripts/audit_layout.py` to compare before and after canvases.
 - `scripts/run_demo.py` to run the full before/after loop.
+- `scripts/visualize_canvas.py` to generate an interactive HTML before/after comparison visualization.
 
 ## When Not to Use
 
@@ -102,7 +103,7 @@ Emit a structured, reversible JSON patch using operations from `references/patch
 
 Compare before and after. Report conflict reduction, overlap area reduction, overflow reduction, alignment improvement, grid snap improvement where available, hierarchy clarity, layout stability, and remaining critical issues.
 
-Use `scripts/audit_layout.py` and `scripts/run_demo.py`.
+Use `scripts/audit_layout.py` and `scripts/run_demo.py`. Use `--interactive` to enable the five-gate human-in-the-loop protocol (Fact → Meaning → Value → Constraint → Commit). Use `scripts/visualize_canvas.py` to generate a before/after HTML comparison with overlap highlights and metric deltas.
 
 ## Workflow
 
@@ -115,6 +116,20 @@ Use `scripts/audit_layout.py` and `scripts/run_demo.py`.
 7. Audit Report: compare before/after scores, metric deltas, layout stability, and remaining conflicts.
 
 ## Human-in-the-loop Rules
+
+Frame Doctor implements a **Five-Gate Protocol** for human-in-the-loop collaboration. Each gate is a decision point where AI proposes and the human confirms or redirects:
+
+| Gate | Name | AI Does | Human Decides |
+|------|------|---------|---------------|
+| **Gate 1** | Fact Gate | Reads nodes, detects overlaps, bounds, overflow | Confirms this is the correct canvas to repair |
+| **Gate 2** | Meaning Gate | Infers semantic roles (title, body, chart, card, CTA) | Confirms or corrects role assignments |
+| **Gate 3** | Value Gate | Proposes repair strategies (readability, density, visual impact) | Chooses value priority for this page |
+| **Gate 4** | Constraint Gate | Generates grid, Auto Layout, constraint plan | Confirms which elements can move/resize/regroup |
+| **Gate 5** | Commit Gate | Applies patch and runs QA | Decides to accept, revert, or generate alternative |
+
+Enable interactive Gate mode with `python scripts/run_demo.py canvas.json --interactive`.
+
+Core rules:
 
 - Ask the user when semantic roles are uncertain and affect layout.
 - Provide at least two layout candidates before committing to a structure, unless the user provides a fixed structure.

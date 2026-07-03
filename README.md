@@ -20,6 +20,10 @@ Frame Doctor does not generate a design from scratch, rewrite copy, replace imag
 - L3 Constraint Execution: `scripts/apply_patch_to_json.py` applies reversible JSON patch operations while rejecting forbidden content/style operations.
 - L4 Audit Loop: `scripts/audit_layout.py` compares before/after score, conflicts, overlap area, overflow distance, alignment drift, grid snap error, hierarchy clarity, layout stability, and remaining conflicts.
 
+### Hybrid Repair
+
+After applying a structural patch (L1), Frame Doctor automatically runs a minimal-fix cleanup pass to resolve any remaining critical geometry errors (overlaps, out-of-bounds, text overflow) introduced by the structural rearrangement. This ensures the final output is a clean canvas even when the structural layout is approximate.
+
 ## Skill Trigger Scenarios
 
 Use this skill when a Figma frame, PPT slide, UI mockup, dashboard, or infographic already exists and the generated nodes are spatially broken. Good triggers include overlap, out-of-bounds placement, text overflow, spacing violation, alignment drift, unclear hierarchy, and repeated components with inconsistent size.
@@ -43,11 +47,34 @@ frame-doctor/
 
 ## Run the Demo
 
+### Batch Mode (original)
+
 From the project directory:
 
 ```bash
 python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json
 ```
+
+### Interactive Gate Mode (Five-Gate Human-in-the-Loop)
+
+```bash
+python scripts/run_demo.py assets/demo_cases/case_04_chaotic_before.json --interactive
+```
+
+This walks you through all five decision gates:
+1. **Fact Gate** — Confirm canvas identity and node inventory
+2. **Meaning Gate** — Confirm or correct semantic role assignments
+3. **Value Gate** — Choose repair priority (Readability / Density / Visual Impact / Grid / Minimal)
+4. **Constraint Gate** — Review the repair plan and pin unmovable elements
+5. **Commit Gate** — Review QA metrics and accept/reject the delivery
+
+### Generate Before/After Visualization
+
+```bash
+python scripts/visualize_canvas.py assets/demo_cases/case_04_chaotic_before.json assets/demo_cases/case_04_chaotic_before_repaired.json --output comparison.html
+```
+
+This produces a side-by-side HTML comparison with overlapping regions highlighted, node color-coding by role, and a metrics delta table.
 
 Other useful commands:
 
@@ -63,7 +90,56 @@ python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_bef
 
 `apply_patch_to_json.py` accepts either a raw patch JSON or a proposal JSON that contains `recommended_patch`.
 
+## Visual Demo
+
+Generate a repaired JSON file plus a browser-openable before/after HTML visualization:
+
+```bash
+python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_01.json --visual-output case_01_before_after.html
+```
+
+Render only the original canvas:
+
+```bash
+python scripts/render_canvas_html.py assets/demo_cases/case_01_ppt_content_before.json --output case_01_before.html
+```
+
+Run the extreme messy slide case:
+
+```bash
+python scripts/run_demo.py assets/demo_cases/case_04_extreme_messy_slide_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_04.json --visual-output case_04_before_after.html
+```
+
+## Interactive LDS Gate Mode
+
+```bash
+python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --interactive
+```
+
+The interactive flow pauses at five review gates:
+
+- Fact Gate: inspect detected conflicts before structure decisions.
+- Meaning Gate: review semantic roles and structure candidates.
+- Value Gate: confirm or switch the human value profile.
+- Constraint Gate: review patch operations before applying them.
+- Commit Gate: inspect the audit summary before accepting the repaired layout.
+
+This makes the LDS claim operational: the system detects facts automatically, but structure and value decisions remain reviewable by the human.
+
 ## Visual Reference Cases
+
+### Demo Cases (JSON)
+
+JSON demo cases with before/repair/after pipelines:
+
+- `assets/demo_cases/case_01_ppt_content_before.json` — PPT content slide with overlapping body + image
+- `assets/demo_cases/case_02_dashboard_before.json` — Dashboard with KPI cards, chart, and sidebar
+- `assets/demo_cases/case_03_mobile_ui_before.json` — Mobile UI with cards, navigation, and search
+- `assets/demo_cases/case_04_chaotic_before.json` — **Extreme case**: 13 overlaps, 4 out-of-bounds, 29 total errors. Best for demonstrating dramatic before/after improvement.
+
+Each demo case generates a `_repaired.json` and `_comparison.html` when run through the pipeline.
+
+### Reference Cases (PNG)
 
 `assets/reference_cases/` contains before/after PNG pairs and notes for complex slide repairs:
 
@@ -92,7 +168,7 @@ python -m unittest discover -s tests
 ## MVP Limits
 
 - JSON only; no Figma API, PPT API, or external network calls.
-- Rule-based repair; no visual rendering or screenshot verification.
+- Rule-based repair; HTML rendering is diagnostic and does not replace design-tool screenshot verification.
 - Auto Layout is stored as metadata instead of being applied through a design tool API.
 - Text overflow is estimated from box size and character count.
 - Structural candidates are heuristic and should be confirmed by a human for real design work.

@@ -7,6 +7,7 @@ import json
 import sys
 
 try:
+    from apply_patch_to_json import apply_patch_to_canvas
     from detect_layout_errors import detect_layout_errors, load_canvas
     from value_function import (
         DEFAULT_PROFILE,
@@ -17,6 +18,7 @@ try:
         rank_candidates,
     )
 except ModuleNotFoundError:
+    from scripts.apply_patch_to_json import apply_patch_to_canvas
     from scripts.detect_layout_errors import detect_layout_errors, load_canvas
     from scripts.value_function import (
         DEFAULT_PROFILE,
@@ -275,7 +277,7 @@ def _maybe_add_value_operations(patch, profile, canvas):
 
 
 def _default_auto_layout_direction(group_role):
-    if group_role in ("kpi_row", "card_grid", "output_group", "stats_row"):
+    if group_role in ("kpi_row", "card_grid", "card_row", "output_group", "stats_row"):
         return "horizontal"
     return "vertical"
 
@@ -554,11 +556,15 @@ def build_two_column_patch(canvas):
     height = frame["height"]
     margin = max(48, min(96, int(width * 0.05)))
     gap = 48
+    roles = nodes_by_role(canvas)
     title = first_node(canvas, "title")
     subtitle = first_node(canvas, "subtitle")
-    body = first_node(canvas, "body")
+    bodies = roles.get("body", [])
     image = first_node(canvas, "image")
     caption = first_node(canvas, "caption")
+    chart = first_node(canvas, "chart")
+    footer = first_node(canvas, "footer")
+    cards = roles.get("card", []) + roles.get("kpi_card", [])
     y = margin
     operations = []
 
@@ -575,11 +581,56 @@ def build_two_column_patch(canvas):
     caption_gap = 24 if caption else 0
     image_height = max(180, content_height - caption_height - caption_gap)
 
-    if body:
-        operations.append(_move(body, margin, y, column_width, content_height))
-    if image:
-        operations.append(_move(image, margin + column_width + gap, y, column_width, image_height))
-    if caption:
+    is_complex_slide = len(bodies) > 1 or bool(cards) or bool(chart) or bool(footer)
+    if not is_complex_slide:
+        body = bodies[0] if bodies else None
+        if body:
+            operations.append(_move(body, margin, y, column_width, content_height))
+        if image:
+            operations.append(_move(image, margin + column_width + gap, y, column_width, image_height))
+        if caption:
+            operations.append(
+                _move(caption, margin + column_width + gap, y + image_height + caption_gap, column_width, caption_height)
+            )
+            operations.append(_group("group_figure", [image, caption], "figure"))
+
+    else:
+        footer_height = 46 if footer else 0
+        footer_gap = 24 if footer else 0
+        available_bottom = height - margin - footer_height - footer_gap
+        left_x = margin
+        right_x = margin + column_width + gap
+        card_gap = 32
+        card_height = 120 if cards else 0
+        card_y = available_bottom - card_height if cards else available_bottom
+        body_area_bottom = card_y - (40 if cards else 0)
+        body_count = max(len(bodies), 1)
+        body_gap = 24
+        body_height = max(112, (body_area_bottom - y - body_gap * max(body_count - 1, 0)) / body_count)
+        for index, body in enumerate(bodies):
+            operations.append(_move(body, left_x, y + index * (body_height + body_gap), column_width, body_height))
+        if cards:
+            card_width = (column_width - card_gap * (len(cards) - 1)) / len(cards)
+            for index, card in enumerate(cards):
+                operations.append(_move(card, left_x + index * (card_width + card_gap), card_y, card_width, card_height))
+            operations.append(_group("group_support_cards", cards, "card_row"))
+        figure_y = y
+        figure_height = 360 if chart else max(180, available_bottom - y - caption_height - caption_gap)
+        if image:
+            operations.append(_move(image, right_x, figure_y, column_width, figure_height))
+            figure_y += figure_height
+        if caption:
+            figure_y += caption_gap
+            operations.append(_move(caption, right_x, figure_y, column_width, caption_height))
+            operations.append(_group("group_figure", [image, caption], "figure"))
+            figure_y += caption_height + 28
+        if chart:
+            chart_height = max(180, available_bottom - figure_y)
+            operations.append(_move(chart, right_x, figure_y, column_width, chart_height))
+        if footer:
+            operations.append(_move(footer, margin, height - margin - footer_height, width - margin * 2, footer_height))
+
+    if caption and not any(op.get("op") == "group" and op.get("group_id") == "group_figure" for op in operations):
         operations.append(
             _move(caption, margin + column_width + gap, y + image_height + caption_gap, column_width, caption_height)
         )
@@ -773,6 +824,26 @@ def build_fallback_patch(canvas, pattern):
     return build_two_column_patch(canvas)
 
 
+def _hybrid_repair(canvas, structural_patch, profile):
+    """Apply structural patch then run minimal fix on top to clean up remaining hard errors."""
+    working = apply_patch_to_canvas(canvas, structural_patch)
+
+    # Run minimal fix on the structurally-patched canvas
+    conflicts = detect_layout_errors(working)
+    minimal = build_minimal_fix_patch(working, conflicts)
+
+    if not minimal.get("operations"):
+        return structural_patch
+
+    # Merge operations: structural first, then minimal cleanup
+    merged = dict(structural_patch)
+    merged["operations"] = list(structural_patch.get("operations", [])) + minimal.get("operations", [])
+    merged["rationale"] = structural_patch.get("rationale", "") + " → then minimal cleanup for remaining critical conflicts."
+    merged["patch_id"] = (structural_patch.get("patch_id", "patch") + "_hybrid")
+    merged["pattern"] = structural_patch.get("pattern", "unknown") + "+minimal"
+    return merged
+
+
 def propose_layout_patch(canvas, profile=None):
     profile = normalize_profile(profile or DEFAULT_PROFILE)
     conflicts = detect_layout_errors(canvas)
@@ -797,10 +868,20 @@ def propose_layout_patch(canvas, profile=None):
         recommended_pattern = ranked_candidates[0]["pattern"]
         recommended = build_fallback_patch(canvas, recommended_pattern)
         recommended = _maybe_add_value_operations(recommended, profile, canvas)
+
+        # Run hybrid repair: structural + minimal cleanup to catch remaining critical errors
+        recommended = _hybrid_repair(canvas, recommended, profile)
+        decision_log.append(
+            {
+                "step": "hybrid_repair",
+                "message": "Applied structural + minimal-fix hybrid to clean up remaining critical conflicts.",
+            }
+        )
     recommended = _add_patch_metadata(recommended, profile, decision_log, semantic_uncertainty)
     alternatives = []
     for candidate in ranked_candidates[1:3]:
         alt = build_fallback_patch(canvas, candidate["pattern"])
+        alt = _hybrid_repair(canvas, alt, profile)
         alternatives.append(_add_patch_metadata(alt, profile, decision_log, semantic_uncertainty))
 
     return {

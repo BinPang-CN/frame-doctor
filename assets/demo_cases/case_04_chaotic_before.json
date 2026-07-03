@@ -1,0 +1,134 @@
+{
+  "frame": {
+    "id": "slide_chaotic",
+    "width": 1920,
+    "height": 1080,
+    "safe_margin": 48,
+    "layout_metadata": {
+      "columns": [96, 624, 1152, 1680],
+      "baseline_grid": {"interval": 8}
+    }
+  },
+  "nodes": [
+    {
+      "id": "title",
+      "type": "text",
+      "role": "title",
+      "x": 18,
+      "y": 12,
+      "width": 1880,
+      "height": 92,
+      "text": "Q3 Product Launch Readiness Assessment — Executive Summary & Strategic Recommendations"
+    },
+    {
+      "id": "subtitle",
+      "type": "text",
+      "role": "subtitle",
+      "x": 820,
+      "y": 68,
+      "width": 1060,
+      "height": 48,
+      "text": "Prepared for Board Review, Confidential"
+    },
+    {
+      "id": "body_text",
+      "type": "text",
+      "role": "body",
+      "x": 36,
+      "y": 140,
+      "width": 860,
+      "height": 540,
+      "text": "The Q3 launch pipeline consists of four major product releases across mobile, web, and infrastructure. Each release has passed alpha testing but requires further integration validation before public rollout. Key risks include API latency spikes under load, incomplete dark mode coverage on Android, and a pending security audit for the payment gateway. The cross-functional launch team recommends a phased rollout starting with 10% canary deployment, escalating to 50% after 48 hours of stable metrics, and full GA by week 3."
+    },
+    {
+      "id": "hero_image",
+      "type": "image",
+      "role": "image",
+      "x": 640,
+      "y": 110,
+      "width": 1240,
+      "height": 720,
+      "source": "launch-timeline-hero.png"
+    },
+    {
+      "id": "card_a",
+      "type": "frame",
+      "role": "card",
+      "x": 20,
+      "y": 680,
+      "width": 410,
+      "height": 260,
+      "text": "Mobile App v4.2\nCanary ready\nBlocked: Dark Mode"
+    },
+    {
+      "id": "card_b",
+      "type": "frame",
+      "role": "card",
+      "x": 460,
+      "y": 710,
+      "width": 390,
+      "height": 240,
+      "text": "Web Dashboard v2.0\nQA passed\nPerformance: OK"
+    },
+    {
+      "id": "card_c",
+      "type": "frame",
+      "role": "card",
+      "x": 880,
+      "y": 660,
+      "width": 1020,
+      "height": 380,
+      "text": "API Gateway v3.1\nSecurity audit pending\nLatency spike risk"
+    },
+    {
+      "id": "card_d",
+      "type": "frame",
+      "role": "card",
+      "x": 1310,
+      "y": 1040,
+      "width": 640,
+      "height": 110,
+      "text": "Infra v1.8\nReady to deploy"
+    },
+    {
+      "id": "chart_kpi",
+      "type": "chart",
+      "role": "chart",
+      "x": 16,
+      "y": 920,
+      "width": 960,
+      "height": 320,
+      "text": "KPI Trend Chart"
+    },
+    {
+      "id": "caption_image",
+      "type": "text",
+      "role": "caption",
+      "x": 1660,
+      "y": 810,
+      "width": 280,
+      "height": 36,
+      "text": "Fig 1: Q3 Timeline (draft)"
+    },
+    {
+      "id": "footer_note",
+      "type": "text",
+      "role": "footer",
+      "x": 24,
+      "y": 1240,
+      "width": 560,
+      "height": 32,
+      "text": "CONFIDENTIAL — Do Not Distribute"
+    },
+    {
+      "id": "cta_button",
+      "type": "frame",
+      "role": "button",
+      "x": 1580,
+      "y": 1000,
+      "width": 340,
+      "height": 56,
+      "text": "Approve Launch Plan"
+    }
+  ]
+}
