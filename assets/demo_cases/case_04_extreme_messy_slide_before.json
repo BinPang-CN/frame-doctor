@@ -1,0 +1,141 @@
+{
+  "frame": {
+    "id": "case_04_extreme_messy_slide",
+    "width": 1920,
+    "height": 1080,
+    "safe_margin": 64
+  },
+  "layout_metadata": {
+    "grid_size": 8,
+    "baseline_grid": {
+      "interval": 8
+    },
+    "columns": [
+      {
+        "x": 96
+      },
+      {
+        "x": 536
+      },
+      {
+        "x": 976
+      },
+      {
+        "x": 1416
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "title_main",
+      "role": "title",
+      "type": "text",
+      "x": 80,
+      "y": 56,
+      "width": 980,
+      "height": 74,
+      "font_size": 52,
+      "text": "季度运营健康度与风险复盘"
+    },
+    {
+      "id": "subtitle_competing",
+      "role": "subtitle",
+      "type": "text",
+      "x": 770,
+      "y": 92,
+      "width": 880,
+      "height": 64,
+      "font_size": 50,
+      "text": "增长、留存、成本与异常事件同屏分析"
+    },
+    {
+      "id": "body_primary",
+      "role": "body",
+      "type": "text",
+      "x": 90,
+      "y": 210,
+      "width": 760,
+      "height": 96,
+      "text": "本页试图同时解释增长来源、渠道投放、用户留存、风险事件、客服积压、成本结构与下季度行动计划。原始输出把多个层级的信息压进同一个正文区域，导致正文高度不足，关键段落被截断，阅读者无法判断哪些内容是事实、哪些内容是解释、哪些内容需要行动。Frame Doctor 应当先识别客观几何冲突，再把结构选择和价值取舍交给人确认。"
+    },
+    {
+      "id": "body_secondary",
+      "role": "body",
+      "type": "text",
+      "x": 700,
+      "y": 250,
+      "width": 620,
+      "height": 180,
+      "text": "渠道 A 带来新增，但付费转化下降；渠道 B 留存稳定但成本升高；渠道 C 数据缺口需要人工复核。"
+    },
+    {
+      "id": "kpi_revenue",
+      "role": "card",
+      "type": "card",
+      "x": 120,
+      "y": 620,
+      "width": 420,
+      "height": 170,
+      "text": "Revenue +18%"
+    },
+    {
+      "id": "kpi_risk",
+      "role": "card",
+      "type": "card",
+      "x": 520,
+      "y": 650,
+      "width": 420,
+      "height": 170,
+      "text": "Risk alerts 42"
+    },
+    {
+      "id": "kpi_progress",
+      "role": "card",
+      "type": "card",
+      "x": 860,
+      "y": 610,
+      "width": 420,
+      "height": 170,
+      "text": "Progress 63%"
+    },
+    {
+      "id": "hero_image",
+      "role": "image",
+      "type": "image",
+      "x": 820,
+      "y": 220,
+      "width": 620,
+      "height": 410
+    },
+    {
+      "id": "risk_chart",
+      "role": "chart",
+      "type": "chart",
+      "x": 1150,
+      "y": 500,
+      "width": 520,
+      "height": 330,
+      "text": "Risk trend chart"
+    },
+    {
+      "id": "chart_caption",
+      "role": "caption",
+      "type": "text",
+      "x": 1160,
+      "y": 970,
+      "width": 430,
+      "height": 60,
+      "text": "图注：风险趋势与异常事件来源"
+    },
+    {
+      "id": "footer_takeaway",
+      "role": "footer",
+      "type": "text",
+      "x": -40,
+      "y": 1010,
+      "width": 2020,
+      "height": 90,
+      "text": "结论：先稳定主流程，再处理异常风险与跨团队协作。"
+    }
+  ]
+}

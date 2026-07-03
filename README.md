@@ -63,6 +63,42 @@ python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_bef
 
 `apply_patch_to_json.py` accepts either a raw patch JSON or a proposal JSON that contains `recommended_patch`.
 
+## Visual Demo
+
+Generate a repaired JSON file plus a browser-openable before/after HTML visualization:
+
+```bash
+python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_01.json --visual-output case_01_before_after.html
+```
+
+Render only the original canvas:
+
+```bash
+python scripts/render_canvas_html.py assets/demo_cases/case_01_ppt_content_before.json --output case_01_before.html
+```
+
+Run the extreme messy slide case:
+
+```bash
+python scripts/run_demo.py assets/demo_cases/case_04_extreme_messy_slide_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_04.json --visual-output case_04_before_after.html
+```
+
+## Interactive LDS Gate Mode
+
+```bash
+python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --interactive
+```
+
+The interactive flow pauses at five review gates:
+
+- Fact Gate: inspect detected conflicts before structure decisions.
+- Meaning Gate: review semantic roles and structure candidates.
+- Value Gate: confirm or switch the human value profile.
+- Constraint Gate: review patch operations before applying them.
+- Commit Gate: inspect the audit summary before accepting the repaired layout.
+
+This makes the LDS claim operational: the system detects facts automatically, but structure and value decisions remain reviewable by the human.
+
 ## Visual Reference Cases
 
 `assets/reference_cases/` contains before/after PNG pairs and notes for complex slide repairs:
@@ -92,7 +128,7 @@ python -m unittest discover -s tests
 ## MVP Limits
 
 - JSON only; no Figma API, PPT API, or external network calls.
-- Rule-based repair; no visual rendering or screenshot verification.
+- Rule-based repair; HTML rendering is diagnostic and does not replace design-tool screenshot verification.
 - Auto Layout is stored as metadata instead of being applied through a design tool API.
 - Text overflow is estimated from box size and character count.
 - Structural candidates are heuristic and should be confirmed by a human for real design work.
