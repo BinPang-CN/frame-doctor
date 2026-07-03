@@ -183,6 +183,7 @@ def detect_text_overflows(canvas):
         line_count = (len(node.get("text", "")) + chars_per_line - 1) // chars_per_line
         needed_height = line_count * 20
         if needed_height > height * 1.15:
+            overflow_distance = max(0.0, needed_height - height)
             errors.append(
                 {
                     "type": "text_overflow",
@@ -192,6 +193,7 @@ def detect_text_overflows(canvas):
                     "metrics": {
                         "estimated_height": round(needed_height, 2),
                         "box_height": round(height, 2),
+                        "overflow_distance": round(overflow_distance, 2),
                     },
                 }
             )
@@ -525,7 +527,16 @@ def summarize(errors):
         metrics = error.get("metrics", {})
         if error.get("type") == "overlap":
             summary["total_overlap_area"] += float(metrics.get("overlap_area", 0))
-        elif error.get("type") in ("out_of_bounds", "text_overflow", "margin_breach"):
+        elif error.get("type") == "text_overflow":
+            metrics = error.get("metrics", {})
+            if "overflow_distance" in metrics:
+                summary["total_overflow_distance"] += float(metrics.get("overflow_distance", 0))
+            else:
+                summary["total_overflow_distance"] += max(
+                    0.0,
+                    float(metrics.get("estimated_height", 0)) - float(metrics.get("box_height", 0)),
+                )
+        elif error.get("type") in ("out_of_bounds", "margin_breach"):
             summary["total_overflow_distance"] += sum(
                 float(value) for value in metrics.values() if isinstance(value, (int, float))
             )

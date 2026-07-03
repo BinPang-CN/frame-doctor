@@ -61,6 +61,38 @@ class ValueFunctionTest(unittest.TestCase):
         forbidden = {"delete_content", "rewrite_text", "replace_image", "change_brand_style", "flatten_editable_layers"}
         self.assertFalse(any(operation.get("op") in forbidden for operation in patch["operations"]))
 
+    def test_existing_horizontal_auto_layout_is_not_overwritten(self):
+        canvas = {
+            "frame": {"id": "dash", "width": 1200, "height": 800},
+            "nodes": [
+                {"id": "title", "role": "title", "type": "text", "x": 40, "y": 40, "width": 300, "height": 48},
+                {"id": "chart", "role": "chart", "x": 40, "y": 280, "width": 800, "height": 300},
+                {"id": "card_1", "role": "card", "x": 40, "y": 120, "width": 180, "height": 100},
+                {"id": "card_2", "role": "card", "x": 240, "y": 120, "width": 180, "height": 100},
+                {"id": "card_3", "role": "card", "x": 440, "y": 120, "width": 180, "height": 100},
+            ],
+        }
+        proposal = propose_layout_patch(canvas, {"density": 0.9, "editability": 0.95})
+        auto_layout_ops = [
+            op
+            for op in proposal["recommended_patch"]["operations"]
+            if op.get("op") == "apply_auto_layout" and op.get("target_id") == "group_kpi_cards"
+        ]
+        self.assertEqual(len(auto_layout_ops), 1)
+        self.assertEqual(auto_layout_ops[0]["direction"], "horizontal")
+
+    def test_hierarchy_ambiguity_requires_human_confirmation(self):
+        canvas = {
+            "frame": {"id": "slide", "width": 800, "height": 500},
+            "nodes": [
+                {"id": "title_a", "role": "title", "type": "text", "font_size": 36, "x": 40, "y": 40, "width": 260, "height": 44},
+                {"id": "title_b", "role": "title", "type": "text", "font_size": 35, "x": 360, "y": 44, "width": 260, "height": 44},
+                {"id": "body", "role": "body", "type": "text", "font_size": 18, "x": 40, "y": 120, "width": 500, "height": 120},
+            ],
+        }
+        proposal = propose_layout_patch(canvas, {"readability": 0.9})
+        self.assertTrue(proposal["recommended_patch"]["value_tradeoffs"]["human_confirmation_required"])
+
 
 if __name__ == "__main__":
     unittest.main()

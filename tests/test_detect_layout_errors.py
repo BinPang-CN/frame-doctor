@@ -92,6 +92,28 @@ class DetectLayoutErrorsTest(unittest.TestCase):
         report = detect_layout_errors(canvas)
         self.assertGreaterEqual(report["summary"].get("hierarchy_ambiguity_count", 0), 1)
 
+    def test_text_overflow_distance_uses_estimated_minus_box_height(self):
+        canvas = {
+            "frame": {"id": "test", "width": 400, "height": 300},
+            "nodes": [
+                {
+                    "id": "body",
+                    "role": "body",
+                    "type": "text",
+                    "text": "x" * 100,
+                    "x": 40,
+                    "y": 40,
+                    "width": 80,
+                    "height": 40,
+                }
+            ],
+        }
+        report = detect_layout_errors(canvas)
+        error = next(error for error in report["errors"] if error["type"] == "text_overflow")
+        expected = error["metrics"]["estimated_height"] - error["metrics"]["box_height"]
+        self.assertEqual(error["metrics"]["overflow_distance"], expected)
+        self.assertEqual(report["summary"]["total_overflow_distance"], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

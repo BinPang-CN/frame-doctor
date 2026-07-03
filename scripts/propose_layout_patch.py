@@ -248,23 +248,35 @@ def _maybe_add_value_operations(patch, profile, canvas):
             }
         )
     if normalized.get("editability", 0) >= 0.8:
-        grouped_targets = {
-            op.get("group_id")
+        existing_auto_layout_targets = {
+            op.get("target_id")
             for op in operations
-            if op.get("op") == "group" and op.get("group_id")
+            if op.get("op") == "apply_auto_layout" and op.get("target_id")
         }
-        for group_id in sorted(grouped_targets):
+        grouped_targets = {}
+        for op in operations:
+            if op.get("op") == "group" and op.get("group_id"):
+                grouped_targets[op.get("group_id")] = op.get("metadata", {}).get("role")
+        for group_id, group_role in sorted(grouped_targets.items()):
+            if group_id in existing_auto_layout_targets:
+                continue
             operations.append(
                 {
                     "op": "apply_auto_layout",
                     "target_id": group_id,
-                    "direction": "vertical",
+                    "direction": _default_auto_layout_direction(group_role),
                     "spacing": 24,
                     "padding": 0,
                 }
             )
     enriched["operations"] = operations
     return enriched
+
+
+def _default_auto_layout_direction(group_role):
+    if group_role in ("kpi_row", "card_grid", "output_group", "stats_row"):
+        return "horizontal"
+    return "vertical"
 
 
 def build_minimal_fix_patch(canvas, conflicts):
@@ -564,7 +576,12 @@ def propose_layout_patch(canvas, profile=None):
     candidates = candidate_patterns(canvas)
     ranked_candidates = rank_candidates(candidates, profile, canvas)
     decision_log = build_decision_log(candidates, ranked_candidates, profile)
-    semantic_uncertainty = conflicts.get("summary", {}).get("semantic_role_uncertainty_count", 0) > 0
+    summary = conflicts.get("summary", {})
+    semantic_uncertainty = (
+        summary.get("uncertain_count", 0) > 0
+        or summary.get("semantic_role_uncertainty_count", 0) > 0
+        or summary.get("hierarchy_ambiguity_count", 0) > 0
+    )
     if profile.get("only_fix_hard_errors", 0) >= 0.75:
         recommended = build_minimal_fix_patch(canvas, conflicts)
         decision_log.append(

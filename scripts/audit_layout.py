@@ -33,7 +33,16 @@ def compute_overflow_distance(canvas):
     report = detect_layout_errors(canvas)
     total = 0.0
     for error in report.get("errors", []):
-        if error.get("type") in ("out_of_bounds", "text_overflow", "margin_breach"):
+        metrics = error.get("metrics", {})
+        if error.get("type") == "text_overflow":
+            if "overflow_distance" in metrics:
+                total += float(metrics.get("overflow_distance", 0))
+            else:
+                total += max(
+                    0.0,
+                    float(metrics.get("estimated_height", 0)) - float(metrics.get("box_height", 0)),
+                )
+        elif error.get("type") in ("out_of_bounds", "margin_breach"):
             for value in error.get("metrics", {}).values():
                 if isinstance(value, (int, float)):
                     total += float(value)
