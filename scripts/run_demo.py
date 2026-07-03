@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the full Frame Doctor JSON MVP loop — batch or interactive Gate-driven repair."""
+"""Run the full Frame Doctor JSON MVP loop - batch or interactive Gate-driven repair."""
 
 import argparse
 import json
@@ -12,14 +12,14 @@ try:
     from detect_layout_errors import detect_layout_errors, load_canvas
     from propose_layout_patch import candidate_patterns, load_profile, propose_layout_patch
     from render_canvas_html import render_comparison
-    from value_function import build_value_tradeoffs, normalize_profile, DEFAULT_PROFILE
+    from value_function import build_value_tradeoffs, normalize_profile
 except ModuleNotFoundError:
     from scripts.apply_patch_to_json import apply_patch_to_canvas
     from scripts.audit_layout import audit_layout
     from scripts.detect_layout_errors import detect_layout_errors, load_canvas
     from scripts.propose_layout_patch import candidate_patterns, load_profile, propose_layout_patch
     from scripts.render_canvas_html import render_comparison
-    from scripts.value_function import build_value_tradeoffs, normalize_profile, DEFAULT_PROFILE
+    from scripts.value_function import build_value_tradeoffs, normalize_profile
 
 
 VALUE_PROFILE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "value_profiles")
@@ -163,7 +163,9 @@ def print_markdown_report(result):
         print(f"- `{item['step']}`: {item['message']}")
     if patch.get("pattern"):
         tradeoffs = build_value_tradeoffs(profile, patch["pattern"])
-        print(f"- `value_tradeoffs`: optimized for [{', '.join(tradeoffs['optimized_for'])}], costs: [{', '.join(tradeoffs['accepted_costs'])}]")
+        optimized = ", ".join(tradeoffs["optimized_for"])
+        costs = ", ".join(tradeoffs["accepted_costs"])
+        print(f"- `value_tradeoffs`: optimized for [{optimized}], costs: [{costs}]")
     print()
     print("## Layout Patch")
     print()
@@ -185,24 +187,6 @@ def print_markdown_report(result):
         print(line)
 
 
-# ---- Interactive Gate helpers ----
-
-def _prompt(prompt_text):
-    sys.stderr.write(f"\n{prompt_text}\n> ")
-    sys.stderr.flush()
-    try:
-        return input().strip()
-    except EOFError:
-        return ""
-
-
-def _confirm(prompt_text, default="y"):
-    ans = _prompt(f"{prompt_text} [y/N]" if default == "n" else f"{prompt_text} [Y/n]").lower()
-    if not ans:
-        return default == "y"
-    return ans in ("y", "yes")
-
-
 def _ask(prompt):
     return input(prompt).strip()
 
@@ -211,16 +195,13 @@ def _yes_or_default(answer):
     return answer.lower() not in ("n", "no")
 
 
-# ---- Rich Gate Implementations ----
-
 def gate_1_fact(canvas):
-    """GATE 1 – Fact Gate: confirm canvas identity and node inventory."""
     print("\n" + "=" * 60)
-    print(" GATE 1 — FACT GATE: Confirm canvas and node inventory")
+    print(" GATE 1 - FACT GATE: Confirm canvas and node inventory")
     print("=" * 60)
     frame = canvas.get("frame", {})
     nodes = canvas.get("nodes", [])
-    print(f"\n  Frame: {frame.get('id', 'unknown')}  |  {frame.get('width', '?')} x {frame.get('height', '?')}")
+    print(f"\n  Frame: {frame.get('id', 'unknown')} | {frame.get('width', '?')} x {frame.get('height', '?')}")
     print(f"  Total nodes: {len(nodes)}")
     print("\n  Node inventory:")
     for node in nodes:
@@ -233,7 +214,10 @@ def gate_1_fact(canvas):
 
     errors = detect_layout_errors(canvas)
     summary = errors.get("summary", {})
-    print(f"\n  Pre-scan: {summary.get('critical_count', 0)} critical, {summary.get('warning_count', 0)} warnings, {summary.get('error_count', 0)} total")
+    print(
+        f"\n  Pre-scan: {summary.get('critical_count', 0)} critical, "
+        f"{summary.get('warning_count', 0)} warnings, {summary.get('error_count', 0)} total"
+    )
     if not _yes_or_default(_ask("  Is this the correct canvas to repair? [Y/n] ")):
         print("  Aborted by user at Gate 1.")
         sys.exit(0)
@@ -241,14 +225,12 @@ def gate_1_fact(canvas):
 
 
 def gate_2_meaning(proposal):
-    """GATE 2 – Meaning Gate: confirm semantic role mapping."""
     print("\n" + "=" * 60)
-    print(" GATE 2 — MEANING GATE: Confirm semantic roles")
+    print(" GATE 2 - MEANING GATE: Confirm semantic roles")
     print("=" * 60)
     print("\n  Inferred roles:")
-    role_map = proposal.get("semantic_role_map", [])
     low_conf = []
-    for item in role_map:
+    for item in proposal.get("semantic_role_map", []):
         flag = "  LOW CONFIDENCE" if item.get("confidence", 0) < 0.6 else ""
         print(f"    {item['node_id']:20s}  {item['role']:15s}  (conf={item['confidence']:.2f}){flag}")
         if item.get("confidence", 0) < 0.6:
@@ -269,35 +251,51 @@ def gate_2_meaning(proposal):
     return True
 
 
-def gate_3_value(candidates):
-    """GATE 3 – Value Gate: choose repair priority with A/B/C/D/E shortcuts."""
+def _profile_description(code):
+    descriptions = {
+        "A": "Information Density",
+        "B": "Readability First",
+        "C": "Visual Impact",
+        "D": "Grid Strictness",
+        "E": "Minimal Repair",
+    }
+    return descriptions.get(code, "Custom")
+
+
+def gate_3_value(candidates, base_profile=None):
     print("\n" + "=" * 60)
-    print(" GATE 3 — VALUE GATE: Choose repair priority")
+    print(" GATE 3 - VALUE GATE: Choose repair priority")
     print("=" * 60)
     print("\n  This page is primarily about:")
-    print("    A. Information density — keep all content, compact layout")
-    print("    B. Readability — prioritize spacing, font size, white space")
-    print("    C. Visual impact — hero image, bold title, eye-catching")
-    print("    D. Structural order — grid alignment, semantic grouping")
-    print("    E. Minimal repair — only fix overlaps, out-of-bounds, overflow")
+    print("    A. Information density - keep all content, compact layout")
+    print("    B. Readability - prioritize spacing, font size, white space")
+    print("    C. Visual impact - hero image, bold title, eye-catching")
+    print("    D. Structural order - grid alignment, semantic grouping")
+    print("    E. Minimal repair - only fix overlaps, out-of-bounds, overflow")
+    if base_profile:
+        print("    ENTER. Use loaded profile")
 
-    choice = _ask("  Choose [A/B/C/D/E] (default: B): ").upper() or "B"
-
-    profiles = {
-        "A": {"density": 0.9, "readability": 0.7, "visual_impact": 0.4, "grid_strictness": 0.8, "editability": 0.7, "content_preservation": 0.9},
-        "B": {"readability": 0.95, "visual_impact": 0.4, "density": 0.4, "grid_strictness": 0.6, "editability": 0.8, "content_preservation": 0.8},
-        "C": {"visual_impact": 0.95, "readability": 0.6, "density": 0.3, "grid_strictness": 0.4, "editability": 0.5, "content_preservation": 0.6},
-        "D": {"grid_strictness": 0.95, "semantic_fidelity": 0.95, "readability": 0.8, "density": 0.7, "editability": 0.9},
-        "E": {"only_fix_hard_errors": 0.95, "content_preservation": 0.95},
-    }
-    profile = normalize_profile(profiles.get(choice, profiles["B"]))
-    print(f"\n  Selected profile: {choice} — {_profile_description(choice)}")
+    choice = _ask("  Choose [A/B/C/D/E] (default: loaded profile or B): ").upper()
+    if not choice and base_profile:
+        profile = base_profile
+        print("\n  Selected loaded profile.")
+    else:
+        choice = choice or "B"
+        profiles = {
+            "A": {"density": 0.9, "readability": 0.7, "visual_impact": 0.4, "grid_strictness": 0.8, "editability": 0.7, "content_preservation": 0.9},
+            "B": {"readability": 0.95, "visual_impact": 0.4, "density": 0.4, "grid_strictness": 0.6, "editability": 0.8, "content_preservation": 0.8},
+            "C": {"visual_impact": 0.95, "readability": 0.6, "density": 0.3, "grid_strictness": 0.4, "editability": 0.5, "content_preservation": 0.6},
+            "D": {"grid_strictness": 0.95, "semantic_fidelity": 0.95, "readability": 0.8, "density": 0.7, "editability": 0.9},
+            "E": {"only_fix_hard_errors": 0.95, "content_preservation": 0.95},
+        }
+        profile = normalize_profile(profiles.get(choice, profiles["B"]))
+        print(f"\n  Selected profile: {choice} - {_profile_description(choice)}")
     print(f"  Value weights: {json.dumps(profile, indent=2)}")
 
     if candidates:
         winner = candidates[0]["pattern"]
         tradeoffs = build_value_tradeoffs(profile, winner)
-        print(f"\n   Tradeoffs for '{winner}':")
+        print(f"\n  Tradeoffs for '{winner}':")
         print(f"    Optimized for: {', '.join(tradeoffs['optimized_for'])}")
         print(f"    Accepted costs: {', '.join(tradeoffs['accepted_costs'])}")
 
@@ -307,54 +305,44 @@ def gate_3_value(candidates):
     return profile
 
 
-def _profile_description(code):
-    return {"A": "Information Density", "B": "Readability First", "C": "Visual Impact", "D": "Grid Strictness", "E": "Minimal Repair"}.get(code, "Custom")
-
-
 def gate_4_constraint(proposal):
-    """GATE 4 – Constraint Gate: review plan, pin elements, switch alternatives."""
     print("\n" + "=" * 60)
-    print(" GATE 4 — CONSTRAINT GATE: Review repair plan")
+    print(" GATE 4 - CONSTRAINT GATE: Review repair plan")
     print("=" * 60)
     recommended = proposal.get("recommended_patch", {})
-    pattern = recommended.get("pattern", "unknown")
     operations = recommended.get("operations", [])
 
-    print(f"\n  Recommended pattern: {pattern}")
+    print(f"\n  Recommended pattern: {recommended.get('pattern', 'unknown')}")
     print(f"  Rationale: {recommended.get('rationale', 'N/A')}")
     print(f"\n  Planned operations ({len(operations)}):")
-
-    # Use cleaner operation summary
     for line in patch_operation_summary(recommended):
         print(f"  {line}")
 
-    # Pin constraint
     movables = [op.get("node_id") for op in operations if op.get("op") == "move_resize" and op.get("node_id")]
     if movables:
         pinned = _ask("\n  Node IDs to PIN (not move, comma-separated, or ENTER to skip): ")
         if pinned:
-            pinned_ids = set(pid.strip() for pid in pinned.split(",") if pid.strip())
-            ops_kept = []
+            pinned_ids = {pid.strip() for pid in pinned.split(",") if pid.strip()}
+            kept = []
             for op in operations:
                 if op.get("op") == "move_resize" and op.get("node_id") in pinned_ids:
                     print(f"    SKIPPED: {op.get('node_id')} (pinned)")
                     continue
-                ops_kept.append(op)
-            recommended["operations"] = ops_kept
-            print(f"    Kept {len(ops_kept)}/{len(operations)} operations.")
+                kept.append(op)
+            recommended["operations"] = kept
+            print(f"    Kept {len(kept)}/{len(operations)} operations.")
 
-    # Alternative strategies
-    alts = proposal.get("alternatives", [])
-    if alts:
+    alternatives = proposal.get("alternatives", [])
+    if alternatives:
         print("\n  Alternative strategies available:")
-        for i, alt in enumerate(alts):
-            print(f"    {i+1}. {alt.get('pattern', '?')} — {alt.get('rationale', 'N/A')[:80]}")
+        for index, alt in enumerate(alternatives, start=1):
+            print(f"    {index}. {alt.get('pattern', '?')} - {alt.get('rationale', 'N/A')[:80]}")
         alt_choice = _ask("  Switch to alternative [1/2/skip]: ")
-        if alt_choice == "1" and alts:
-            proposal["recommended_patch"] = alts[0]
+        if alt_choice == "1":
+            proposal["recommended_patch"] = alternatives[0]
             print("  Switched to alternative 1.")
-        elif alt_choice == "2" and len(alts) > 1:
-            proposal["recommended_patch"] = alts[1]
+        elif alt_choice == "2" and len(alternatives) > 1:
+            proposal["recommended_patch"] = alternatives[1]
             print("  Switched to alternative 2.")
 
     if not _yes_or_default(_ask("  Apply this repair plan? [Y/n] ")):
@@ -363,45 +351,36 @@ def gate_4_constraint(proposal):
     return proposal
 
 
-def gate_5_commit(before_canvas, repaired_canvas, audit_report):
-    """GATE 5 – Commit Gate: review QA and confirm final delivery."""
+def gate_5_commit(audit_report):
     print("\n" + "=" * 60)
-    print(" GATE 5 — COMMIT GATE: Post-repair QA")
+    print(" GATE 5 - COMMIT GATE: Post-repair QA")
     print("=" * 60)
-    print(f"\n  Score: {audit_report['before_score']}  {audit_report['after_score']}  (D={audit_report['score_delta']})")
-    cr = audit_report.get("conflict_reduction", {})
-    print(f"  Critical errors: {cr.get('before_critical_count', '?')}  {cr.get('after_critical_count', '?')}")
-    print(f"  Total errors: {cr.get('before_error_count', '?')}  {cr.get('after_error_count', '?')}")
+    print(f"\n  Score: {audit_report['before_score']} -> {audit_report['after_score']} (delta={audit_report['score_delta']})")
+    reduction = audit_report.get("conflict_reduction", {})
+    print(f"  Critical errors: {reduction.get('before_critical_count', '?')} -> {reduction.get('after_critical_count', '?')}")
+    print(f"  Total errors: {reduction.get('before_error_count', '?')} -> {reduction.get('after_error_count', '?')}")
 
-    md = audit_report.get("metric_deltas", {})
-    print(f"  Overlap area: {md.get('overlap_area_before', '?')}  {md.get('overlap_area_after', '?')} (D={md.get('overlap_area_reduction', '?')})")
-    print(f"  Overflow distance: {md.get('overflow_distance_before', '?')}  {md.get('overflow_distance_after', '?')}  (D={md.get('overflow_distance_reduction', '?')})")
-    print(f"  Alignment drift: {md.get('alignment_drift_before', '?')}  {md.get('alignment_drift_after', '?')}  (D={md.get('alignment_drift_reduction', '?')})")
-    print(f"  Layout stability: {md.get('layout_stability', '?')}")
+    metrics = audit_report.get("metric_deltas", {})
+    print(f"  Overlap area: {metrics.get('overlap_area_before', '?')} -> {metrics.get('overlap_area_after', '?')}")
+    print(f"  Overflow distance: {metrics.get('overflow_distance_before', '?')} -> {metrics.get('overflow_distance_after', '?')}")
+    print(f"  Alignment drift: {metrics.get('alignment_drift_before', '?')} -> {metrics.get('alignment_drift_after', '?')}")
+    print(f"  Layout stability: {metrics.get('layout_stability', '?')}")
 
     remaining = audit_report.get("remaining_conflicts", [])
     if remaining:
         print(f"\n  Remaining issues ({len(remaining)}):")
-        for err in remaining[:5]:
-            nodes_str = ", ".join(str(n) for n in err.get("nodes", []))
-            print(f"    - {err.get('severity', '?')} {err.get('type', '?')} on {nodes_str}")
+        for error in remaining[:5]:
+            nodes = ", ".join(str(node) for node in error.get("nodes", []))
+            print(f"    - {error.get('severity', '?')} {error.get('type', '?')} on {nodes}")
         if len(remaining) > 5:
             print(f"    ... and {len(remaining) - 5} more")
-
-    print("\n  Suggested manual review:")
-    print("    - Does the layout match the presentation narrative?")
-    print("    - Are key visuals positioned for maximum impact?")
-    print("    - Is the card/sequence order logical?")
-    print("    - Does the white-space balance feel right?")
 
     if not _yes_or_default(_ask("  Accept this repair and deliver? [Y/n] ")):
         print("  Repair rejected. Canvas reverted.")
         return False
-    print("   Repair accepted and delivered!")
+    print("  Repair accepted and delivered.")
     return True
 
-
-# ---- Main entry points ----
 
 def run_demo(canvas_path, profile_path, output_json=None, visual_output=None):
     result = build_demo_result(canvas_path, profile_path)
@@ -419,16 +398,11 @@ def run_demo(canvas_path, profile_path, output_json=None, visual_output=None):
 
 
 def run_interactive_demo(canvas_path, profile_path=None):
-    """Five-Gate interactive LDS repair flow."""
     canvas = load_canvas(canvas_path)
+    base_profile = load_profile(profile_path) if profile_path else None
 
     gate_1_fact(canvas)
-
-    # Pre-detect for candidates
-    candidates = candidate_patterns(canvas)
-    profile = gate_3_value(candidates)
-
-    # Run proposal with chosen value profile
+    profile = gate_3_value(candidate_patterns(canvas), base_profile=base_profile)
     proposal = propose_layout_patch(canvas, profile)
     gate_2_meaning(proposal)
     proposal = gate_4_constraint(proposal)
@@ -437,10 +411,9 @@ def run_interactive_demo(canvas_path, profile_path=None):
     repaired = apply_patch_to_canvas(canvas, patch)
     audit = audit_layout(canvas, repaired)
 
-    if not gate_5_commit(canvas, repaired, audit):
+    if not gate_5_commit(audit):
         sys.exit(1)
 
-    # Build and print final result
     result = build_demo_result(canvas_path, profile_path or "interactive", profile=profile, selected_patch=patch)
     print()
     print_markdown_report(result)
@@ -450,7 +423,7 @@ def run_interactive_demo(canvas_path, profile_path=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Run Frame Doctor demo.")
     parser.add_argument("canvas_json", help="Path to a canvas JSON file.")
-    parser.add_argument("--profile", help="Path to a value profile JSON file (optional in interactive mode).")
+    parser.add_argument("--profile", help="Path to a value profile JSON file.")
     parser.add_argument("--output-json", help="Write the repaired canvas JSON to this path.")
     parser.add_argument("--visual-output", help="Write before/after HTML visualization to this path.")
     parser.add_argument("--interactive", action="store_true", help="Run the five LDS Gate pauses.")
@@ -459,9 +432,8 @@ def main(argv=None):
     if args.interactive:
         run_interactive_demo(args.canvas_json, args.profile)
     else:
-        if not args.profile:
-            args.profile = os.path.join("assets", "value_profiles", "readability_first.json")
-        run_demo(args.canvas_json, args.profile, output_json=args.output_json, visual_output=args.visual_output)
+        profile = args.profile or os.path.join("assets", "value_profiles", "readability_first.json")
+        run_demo(args.canvas_json, profile, output_json=args.output_json, visual_output=args.visual_output)
 
 
 if __name__ == "__main__":
