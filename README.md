@@ -90,6 +90,28 @@ python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_bef
 
 `apply_patch_to_json.py` accepts either a raw patch JSON or a proposal JSON that contains `recommended_patch`.
 
+## Agent Invocation
+
+`scripts/frame_doctor_skill.py` is the stable interface for Codex / LearnBuddy. Low-level scripts remain available for development and debugging.
+
+Get generation-time constraints before drafting geometry:
+
+```bash
+python scripts/frame_doctor_skill.py generation-brief --target ppt --profile readability_first
+```
+
+Guard final geometry before returning it:
+
+```bash
+python scripts/frame_doctor_skill.py guard assets/demo_cases/case_01_ppt_content_before.json --profile readability_first --fail-on-critical
+```
+
+Repair a broken canvas and emit a visual comparison:
+
+```bash
+python scripts/frame_doctor_skill.py repair assets/demo_cases/case_01_ppt_content_before.json --profile readability_first --output repaired_case_01.json --visual-output case_01_before_after.html
+```
+
 ## Visual Demo
 
 Generate a repaired JSON file plus a browser-openable before/after HTML visualization:

@@ -21,6 +21,7 @@ Use this skill when all of these are true:
 
 For JSON-based MVP work, use the bundled scripts:
 
+- `scripts/frame_doctor_skill.py` as the stable Codex/LearnBuddy invocation layer.
 - `scripts/detect_layout_errors.py` to detect objective conflicts.
 - `scripts/score_layout.py` to score a canvas.
 - `scripts/propose_layout_patch.py` to propose a value-aware patch.
@@ -104,6 +105,30 @@ Emit a structured, reversible JSON patch using operations from `references/patch
 Compare before and after. Report conflict reduction, overlap area reduction, overflow reduction, alignment improvement, grid snap improvement where available, hierarchy clarity, layout stability, and remaining critical issues.
 
 Use `scripts/audit_layout.py` and `scripts/run_demo.py`. Use `--interactive` to enable the five-gate human-in-the-loop protocol (Fact → Meaning → Value → Constraint → Commit). Use `scripts/visualize_canvas.py` to generate a before/after HTML comparison with overlap highlights and metric deltas.
+
+## Direct Agent Invocation
+
+Frame Doctor can be called directly by Codex, LearnBuddy, or another coding agent through `scripts/frame_doctor_skill.py`.
+
+Use `generation-brief` before generating layout geometry:
+
+```bash
+python scripts/frame_doctor_skill.py generation-brief --target ppt --profile readability_first
+```
+
+Use `guard` before final delivery:
+
+```bash
+python scripts/frame_doctor_skill.py guard canvas.json --profile readability_first --fail-on-critical
+```
+
+Use `repair` when critical layout conflicts are detected:
+
+```bash
+python scripts/frame_doctor_skill.py repair canvas.json --profile readability_first --output repaired.json --visual-output comparison.html
+```
+
+Never return unaudited geometry. If `guard` reports critical conflicts, repair the canvas or explicitly report the remaining conflicts and why they were not automatically repairable.
 
 ## Workflow
 
