@@ -89,7 +89,3 @@ python -m unittest discover -s tests
 - PPT: convert slide shapes to canvas JSON, apply geometry repairs, and write back to `.pptx`.
 - LearnBuddy: wrap the workflow as a guided skill that asks for value profiles and presents before/after reports.
 - Ardot: connect patch output to Ardot's design execution layer while preserving the same operation schema.
-
-## Competition Submission Notes
-
-This repository corresponds to the Skill installation package. The demo video and PPT should be prepared separately.
