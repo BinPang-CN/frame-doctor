@@ -188,7 +188,10 @@ def print_markdown_report(result):
 
 
 def _ask(prompt):
-    return input(prompt).strip()
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        return ""
 
 
 def _yes_or_default(answer):
@@ -402,9 +405,10 @@ def run_interactive_demo(canvas_path, profile_path=None):
     base_profile = load_profile(profile_path) if profile_path else None
 
     gate_1_fact(canvas)
+    initial_profile = base_profile or normalize_profile({})
+    gate_2_meaning(propose_layout_patch(canvas, initial_profile))
     profile = gate_3_value(candidate_patterns(canvas), base_profile=base_profile)
     proposal = propose_layout_patch(canvas, profile)
-    gate_2_meaning(proposal)
     proposal = gate_4_constraint(proposal)
 
     patch = proposal.get("recommended_patch", {})

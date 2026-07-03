@@ -47,18 +47,20 @@ frame-doctor/
 
 ## Run the Demo
 
-### Batch Mode (original)
+### Batch Mode = Automatic Profile Mode
 
 From the project directory:
 
 ```bash
-python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json
+python3 scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json
 ```
 
-### Interactive Gate Mode (Five-Gate Human-in-the-Loop)
+Batch mode loads a value profile from disk, applies the recommended patch automatically, and prints the audit report.
+
+### Interactive Mode = Competition Demo Mode
 
 ```bash
-python scripts/run_demo.py assets/demo_cases/case_04_chaotic_before.json --interactive
+python3 scripts/run_demo.py assets/demo_cases/case_04_chaotic_before.json --interactive
 ```
 
 This walks you through all five decision gates:
@@ -68,24 +70,36 @@ This walks you through all five decision gates:
 4. **Constraint Gate** — Review the repair plan and pin unmovable elements
 5. **Commit Gate** — Review QA metrics and accept/reject the delivery
 
+For competition demos, this mode is the clearest proof that LDS does not silently beautify: it exposes Fact, Meaning, Value, Constraint, and Commit decisions.
+
 ### Generate Before/After Visualization
 
 ```bash
-python scripts/visualize_canvas.py assets/demo_cases/case_04_chaotic_before.json assets/demo_cases/case_04_chaotic_before_repaired.json --output comparison.html
+python3 scripts/run_demo.py assets/demo_cases/case_04_chaotic_before.json --profile assets/value_profiles/readability_first.json --output-json case_04_chaotic_before_repaired.json --visual-output case_04_chaotic_comparison.html
 ```
 
 This produces a side-by-side HTML comparison with overlapping regions highlighted, node color-coding by role, and a metrics delta table.
 
+### Primary Competition Scope
+
+Frame Doctor's main competition experiments focus on three layout families:
+
+- `process_pipeline`: complex mechanism slides with left-to-right flow, sidebars, outputs, and connector routing.
+- `layered_system_graph`: stacked system diagrams with top/middle/bottom layers, side panels, legends, and graph interactions.
+- `dashboard` / `card_grid`: dashboard and repeated-module repairs with KPI rows, charts, cards, and sidebars.
+
+Mobile references remain useful background material, but the competition narrative should center on these three families.
+
 Other useful commands:
 
 ```bash
-python scripts/detect_layout_errors.py assets/demo_cases/case_01_ppt_content_before.json
-python scripts/score_layout.py assets/demo_cases/case_01_ppt_content_before.json
-python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json
-python scripts/apply_patch_to_json.py assets/demo_cases/case_01_ppt_content_before.json patch.json --output repaired.json
-python scripts/audit_layout.py assets/demo_cases/case_01_ppt_content_before.json repaired.json
-python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/density_first.json
-python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/minimal_fix.json
+python3 scripts/detect_layout_errors.py assets/demo_cases/case_01_ppt_content_before.json
+python3 scripts/score_layout.py assets/demo_cases/case_01_ppt_content_before.json
+python3 scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json
+python3 scripts/frame_doctor_skill.py repair assets/demo_cases/case_01_ppt_content_before.json --profile readability_first --output repaired_case_01.json
+python3 scripts/audit_layout.py assets/demo_cases/case_01_ppt_content_before.json repaired_case_01.json
+python3 scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/density_first.json
+python3 scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/minimal_fix.json
 ```
 
 `apply_patch_to_json.py` accepts either a raw patch JSON or a proposal JSON that contains `recommended_patch`.
@@ -97,45 +111,47 @@ python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_bef
 Get generation-time constraints before drafting geometry:
 
 ```bash
-python scripts/frame_doctor_skill.py generation-brief --target ppt --profile readability_first
-```
-
-Guard final geometry before returning it:
-
-```bash
-python scripts/frame_doctor_skill.py guard assets/demo_cases/case_01_ppt_content_before.json --profile readability_first --fail-on-critical
+python3 scripts/frame_doctor_skill.py generation-brief --target ppt --profile readability_first
 ```
 
 Repair a broken canvas and emit a visual comparison:
 
 ```bash
-python scripts/frame_doctor_skill.py repair assets/demo_cases/case_01_ppt_content_before.json --profile readability_first --output repaired_case_01.json --visual-output case_01_before_after.html
+python3 scripts/frame_doctor_skill.py repair assets/demo_cases/case_01_ppt_content_before.json --profile readability_first --output repaired_case_01.json --visual-output case_01_before_after.html
 ```
+
+Guard final geometry before returning it:
+
+```bash
+python3 scripts/frame_doctor_skill.py guard repaired_case_01.json --profile readability_first --fail-on-critical
+```
+
+For a deliberately broken draft, `--fail-on-critical` is expected to return a non-zero exit code.
 
 ## Visual Demo
 
 Generate a repaired JSON file plus a browser-openable before/after HTML visualization:
 
 ```bash
-python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_01.json --visual-output case_01_before_after.html
+python3 scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_01.json --visual-output case_01_before_after.html
 ```
 
 Render only the original canvas:
 
 ```bash
-python scripts/render_canvas_html.py assets/demo_cases/case_01_ppt_content_before.json --output case_01_before.html
+python3 scripts/render_canvas_html.py assets/demo_cases/case_01_ppt_content_before.json --output case_01_before.html
 ```
 
 Run the extreme messy slide case:
 
 ```bash
-python scripts/run_demo.py assets/demo_cases/case_04_extreme_messy_slide_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_04.json --visual-output case_04_before_after.html
+python3 scripts/run_demo.py assets/demo_cases/case_04_extreme_messy_slide_before.json --profile assets/value_profiles/readability_first.json --output-json repaired_case_04.json --visual-output case_04_before_after.html
 ```
 
 ## Interactive LDS Gate Mode
 
 ```bash
-python scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --interactive
+python3 scripts/run_demo.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json --interactive
 ```
 
 The interactive flow pauses at five review gates:
@@ -184,7 +200,7 @@ Use these as pattern references for complex mechanism slides, operational dashbo
 ## Run Tests
 
 ```bash
-python -m unittest discover -s tests
+python3 -m unittest discover -s tests
 ```
 
 ## MVP Limits
