@@ -7,28 +7,32 @@ import sys
 
 try:
     from detect_layout_errors import detect_layout_errors, load_canvas
+    from value_function import (
+        DEFAULT_PROFILE,
+        build_decision_log,
+        build_value_tradeoffs,
+        choose_grid_strategy,
+        normalize_profile,
+        rank_candidates,
+    )
 except ModuleNotFoundError:
     from scripts.detect_layout_errors import detect_layout_errors, load_canvas
-
-
-DEFAULT_PROFILE = {
-    "readability": 0.8,
-    "visual_impact": 0.5,
-    "content_preservation": 0.8,
-    "grid_strictness": 0.6,
-    "editability": 0.7,
-    "only_fix_hard_errors": 0.0,
-}
+    from scripts.value_function import (
+        DEFAULT_PROFILE,
+        build_decision_log,
+        build_value_tradeoffs,
+        choose_grid_strategy,
+        normalize_profile,
+        rank_candidates,
+    )
 
 
 def load_profile(path):
     if not path:
-        return dict(DEFAULT_PROFILE)
+        return normalize_profile(DEFAULT_PROFILE)
     with open(path, "r", encoding="utf-8") as handle:
         profile = json.load(handle)
-    merged = dict(DEFAULT_PROFILE)
-    merged.update(profile)
-    return merged
+    return normalize_profile(profile)
 
 
 def nodes_by_role(canvas):
@@ -217,6 +221,118 @@ def _group(group_id, nodes, role):
     }
 
 
+def _add_patch_metadata(patch, profile, decision_log, semantic_uncertainty=False):
+    enriched = dict(patch)
+    pattern = enriched.get("pattern", "unknown")
+    tradeoffs = build_value_tradeoffs(profile, pattern)
+    tradeoffs["human_confirmation_required"] = bool(semantic_uncertainty)
+    enriched["value_profile_used"] = normalize_profile(profile)
+    enriched["value_tradeoffs"] = tradeoffs
+    enriched["decision_log"] = decision_log
+    return enriched
+
+
+def _maybe_add_value_operations(patch, profile, canvas):
+    enriched = dict(patch)
+    operations = list(enriched.get("operations", []))
+    normalized = normalize_profile(profile)
+    node_ids = [node.get("id") for node in canvas.get("nodes", []) if node.get("id")]
+    if normalized.get("grid_strictness", 0) >= 0.82 and node_ids:
+        strategy = choose_grid_strategy(normalized, canvas)
+        operations.append(
+            {
+                "op": "snap_to_grid",
+                "node_ids": node_ids,
+                "grid_size": strategy["grid_size"],
+                "metadata": {"grid_strategy": strategy["family"]},
+            }
+        )
+    if normalized.get("editability", 0) >= 0.8:
+        grouped_targets = {
+            op.get("group_id")
+            for op in operations
+            if op.get("op") == "group" and op.get("group_id")
+        }
+        for group_id in sorted(grouped_targets):
+            operations.append(
+                {
+                    "op": "apply_auto_layout",
+                    "target_id": group_id,
+                    "direction": "vertical",
+                    "spacing": 24,
+                    "padding": 0,
+                }
+            )
+    enriched["operations"] = operations
+    return enriched
+
+
+def build_minimal_fix_patch(canvas, conflicts):
+    frame = canvas.get("frame", {})
+    frame_width = float(frame.get("width", 0))
+    frame_height = float(frame.get("height", 0))
+    nodes = {node.get("id"): node for node in canvas.get("nodes", [])}
+    operations = []
+    moved = set()
+
+    for error in conflicts.get("errors", []):
+        error_type = error.get("type")
+        if error_type not in ("overlap", "out_of_bounds", "text_overflow", "margin_breach"):
+            continue
+        if error_type == "out_of_bounds":
+            node = nodes.get(error.get("nodes", [None])[0])
+            if not node:
+                continue
+            x = min(max(float(node.get("x", 0)), 0), max(0.0, frame_width - float(node.get("width", 0))))
+            y = min(max(float(node.get("y", 0)), 0), max(0.0, frame_height - float(node.get("height", 0))))
+            operations.append(_move(node, x, y, node.get("width", 0), node.get("height", 0)))
+            moved.add(node.get("id"))
+        elif error_type == "text_overflow":
+            node = nodes.get(error.get("nodes", [None])[0])
+            if not node:
+                continue
+            needed = error.get("metrics", {}).get("estimated_height", node.get("height", 0))
+            operations.append(
+                {
+                    "op": "resize_text_box",
+                    "node_id": node.get("id"),
+                    "width": node.get("width", 0),
+                    "height": round(min(max(float(needed), float(node.get("height", 0))), frame_height)),
+                }
+            )
+        elif error_type == "overlap":
+            involved = error.get("nodes", [])
+            if len(involved) < 2:
+                continue
+            node = nodes.get(involved[1])
+            anchor = nodes.get(involved[0])
+            if not node or not anchor or node.get("id") in moved:
+                continue
+            y = min(
+                max(0.0, float(anchor.get("y", 0)) + float(anchor.get("height", 0)) + 24),
+                max(0.0, frame_height - float(node.get("height", 0))),
+            )
+            operations.append(_move(node, node.get("x", 0), y, node.get("width", 0), node.get("height", 0)))
+            moved.add(node.get("id"))
+        elif error_type == "margin_breach":
+            node = nodes.get(error.get("nodes", [None])[0])
+            if not node or node.get("id") in moved:
+                continue
+            margin = float(frame.get("safe_margin", canvas.get("layout_metadata", {}).get("safe_margin", 24)))
+            x = min(max(float(node.get("x", 0)), margin), max(margin, frame_width - margin - float(node.get("width", 0))))
+            y = min(max(float(node.get("y", 0)), margin), max(margin, frame_height - margin - float(node.get("height", 0))))
+            operations.append(_move(node, x, y, node.get("width", 0), node.get("height", 0)))
+            moved.add(node.get("id"))
+
+    return {
+        "version": "1.0",
+        "patch_id": "patch_minimal_fix_001",
+        "pattern": "minimal_fix",
+        "rationale": "Only resolve critical objective errors while preserving existing layout decisions.",
+        "operations": operations,
+    }
+
+
 def build_two_column_patch(canvas):
     frame = canvas["frame"]
     width = frame["width"]
@@ -338,6 +454,39 @@ def build_card_grid_patch(canvas):
     }
 
 
+def build_hero_plus_support_patch(canvas):
+    frame = canvas["frame"]
+    width = frame["width"]
+    height = frame["height"]
+    margin = max(48, min(96, int(width * 0.05)))
+    title = first_node(canvas, "title")
+    subtitle = first_node(canvas, "subtitle")
+    image = first_node(canvas, "image")
+    body = first_node(canvas, "body")
+    button = first_node(canvas, "button", "primary_button")
+    operations = []
+
+    if image:
+        operations.append(_move(image, margin, margin + 120, width - margin * 2, max(220, height * 0.42)))
+    if title:
+        operations.append(_move(title, margin, margin, width - margin * 2, 88))
+    if subtitle:
+        operations.append(_move(subtitle, margin, margin + 96, width - margin * 2, 48))
+    support_y = margin + 120 + max(220, height * 0.42) + 40
+    if body:
+        operations.append(_move(body, margin, support_y, width - margin * 2, max(120, height - support_y - margin)))
+    if button:
+        operations.append(_move(button, margin, height - margin - 56, 240, 56))
+
+    return {
+        "version": "1.0",
+        "patch_id": "patch_hero_plus_support_001",
+        "pattern": "hero_plus_support",
+        "rationale": "Preserve a dominant hero region while keeping support content below it.",
+        "operations": operations,
+    }
+
+
 def build_mobile_patch(canvas, pattern="mobile_screen"):
     frame = canvas["frame"]
     width = frame["width"]
@@ -404,26 +553,51 @@ def build_fallback_patch(canvas, pattern):
         return build_card_grid_patch(canvas)
     if pattern == "mobile_screen" or pattern.startswith("mobile_"):
         return build_mobile_patch(canvas, pattern)
+    if pattern == "hero_plus_support":
+        return build_hero_plus_support_patch(canvas)
     return build_two_column_patch(canvas)
 
 
 def propose_layout_patch(canvas, profile=None):
-    profile = profile or dict(DEFAULT_PROFILE)
+    profile = normalize_profile(profile or DEFAULT_PROFILE)
     conflicts = detect_layout_errors(canvas)
     candidates = candidate_patterns(canvas)
-    recommended_pattern = candidates[0]["pattern"]
-    recommended = build_fallback_patch(canvas, recommended_pattern)
+    ranked_candidates = rank_candidates(candidates, profile, canvas)
+    decision_log = build_decision_log(candidates, ranked_candidates, profile)
+    semantic_uncertainty = conflicts.get("summary", {}).get("semantic_role_uncertainty_count", 0) > 0
+    if profile.get("only_fix_hard_errors", 0) >= 0.75:
+        recommended = build_minimal_fix_patch(canvas, conflicts)
+        decision_log.append(
+            {
+                "step": "patch_builder",
+                "message": "Selected minimal-fix patch builder because only_fix_hard_errors is high.",
+            }
+        )
+    else:
+        recommended_pattern = ranked_candidates[0]["pattern"]
+        recommended = build_fallback_patch(canvas, recommended_pattern)
+        recommended = _maybe_add_value_operations(recommended, profile, canvas)
+    recommended = _add_patch_metadata(recommended, profile, decision_log, semantic_uncertainty)
     alternatives = []
-    for candidate in candidates[1:3]:
-        alternatives.append(build_fallback_patch(canvas, candidate["pattern"]))
+    for candidate in ranked_candidates[1:3]:
+        alt = build_fallback_patch(canvas, candidate["pattern"])
+        alternatives.append(_add_patch_metadata(alt, profile, decision_log, semantic_uncertainty))
 
     return {
         "layout_conflict_report": conflicts,
         "semantic_role_map": semantic_role_map(canvas),
-        "structure_candidates": candidates[:3],
+        "structure_candidates": ranked_candidates[:3],
         "human_value_profile": profile,
+        "value_decision_log": decision_log,
         "recommended_patch": recommended,
         "alternatives": alternatives,
+        "rejected_tradeoffs": [
+            {
+                "pattern": candidate["pattern"],
+                "reason": f"Ranked below recommended candidate with score {candidate.get('rank_score', 0)}.",
+            }
+            for candidate in ranked_candidates[3:]
+        ],
     }
 
 

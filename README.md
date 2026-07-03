@@ -1,12 +1,24 @@
 # Frame Doctor
 
-Frame Doctor is a LearnBuddy Skill project for repairing layout geometry after an AI-generated canvas already contains elements. It focuses on overlaps, out-of-bounds nodes, text overflow, spacing issues, alignment drift, inconsistent groups, and unclear hierarchy.
+Frame Doctor is the executable Skill package for LDS: Layout Decision System. It repairs layout geometry after an AI-generated canvas already contains elements. It focuses on overlaps, out-of-bounds nodes, text overflow, spacing issues, alignment drift, inconsistent groups, unclear hierarchy, and value-aware repair decisions.
+
+LDS is not an automatic layout beautifier. It turns layout repair into a decision process: detect conflicts, propose structure hypotheses, rank them with a human value function, execute reversible constraints, and audit the result.
+
+> We are not doing automatic layout. We are redistributing layout decision power.
 
 The project also includes a lightweight grid-constraint layer distilled from a local LDS Grid Reference Pack. That layer treats margins, columns, gutters, fields, baselines, and image-caption anchoring as measurable repair constraints rather than decorative style advice.
 
 ## Why This Is Not a Generic Layout Assistant
 
 Frame Doctor does not generate a design from scratch, rewrite copy, replace images, or choose a new style. It treats layout repair as a post-processing workflow: detect conflicts, map semantic roles, propose structure candidates, confirm a value profile, emit a patch, apply it, and audit the result.
+
+## LDS Implementation Layers
+
+- L0 Conflict Detection: `scripts/detect_layout_errors.py` detects overlap, out-of-bounds, text overflow, margin breach, spacing violation, alignment drift, gutter anomaly, column drift, baseline mismatch, image-caption detachment, semantic uncertainty, and hierarchy ambiguity.
+- L1 Structure Hypothesis: `scripts/propose_layout_patch.py` proposes multiple candidate structures such as `two_column`, `card_grid`, `dashboard`, `mobile_screen`, `process_pipeline`, and `layered_system_graph`.
+- L2 Human Value Function: `scripts/value_function.py` ranks candidates using readability, visual impact, density, grid strictness, editability, content preservation, semantic fidelity, and minimal-fix preference.
+- L3 Constraint Execution: `scripts/apply_patch_to_json.py` applies reversible JSON patch operations while rejecting forbidden content/style operations.
+- L4 Audit Loop: `scripts/audit_layout.py` compares before/after score, conflicts, overlap area, overflow distance, alignment drift, grid snap error, hierarchy clarity, layout stability, and remaining conflicts.
 
 ## Skill Trigger Scenarios
 
@@ -44,6 +56,9 @@ python scripts/detect_layout_errors.py assets/demo_cases/case_01_ppt_content_bef
 python scripts/score_layout.py assets/demo_cases/case_01_ppt_content_before.json
 python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/readability_first.json
 python scripts/apply_patch_to_json.py assets/demo_cases/case_01_ppt_content_before.json patch.json --output repaired.json
+python scripts/audit_layout.py assets/demo_cases/case_01_ppt_content_before.json repaired.json
+python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/density_first.json
+python scripts/propose_layout_patch.py assets/demo_cases/case_01_ppt_content_before.json --profile assets/value_profiles/minimal_fix.json
 ```
 
 `apply_patch_to_json.py` accepts either a raw patch JSON or a proposal JSON that contains `recommended_patch`.
@@ -81,6 +96,7 @@ python -m unittest discover -s tests
 - Auto Layout is stored as metadata instead of being applied through a design tool API.
 - Text overflow is estimated from box size and character count.
 - Structural candidates are heuristic and should be confirmed by a human for real design work.
+- Detector heuristics are deterministic and lightweight; they are intended for repair triage, not pixel-perfect design-tool validation.
 - Grid checks are intentionally lightweight; declared safe margins are detected, while full baseline and inferred modular-grid scoring remain future work.
 
 ## Future Integrations

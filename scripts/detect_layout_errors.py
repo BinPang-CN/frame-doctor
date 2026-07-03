@@ -7,6 +7,20 @@ import json
 import sys
 
 
+REPEATED_ROLES = {
+    "card",
+    "kpi_card",
+    "settings_row",
+    "article_card",
+    "product_card",
+    "chat_row",
+    "health_metric_card",
+    "service_grid",
+    "result_card",
+    "process_step",
+}
+
+
 def load_canvas(path):
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
@@ -240,12 +254,267 @@ def detect_image_caption_detachment(canvas, max_gap=96):
     return errors
 
 
+def _role_groups(canvas, min_count=3):
+    groups = {}
+    for node in _detectable_nodes(canvas):
+        role = node.get("role")
+        if role in REPEATED_ROLES:
+            groups.setdefault(role, []).append(node)
+    return {role: nodes for role, nodes in groups.items() if len(nodes) >= min_count}
+
+
+def detect_alignment_drift(canvas, tolerance=8):
+    errors = []
+    for role, nodes in _role_groups(canvas).items():
+        rects = [(node, rect(node)) for node in nodes]
+        tops = [item[1]["top"] for item in rects]
+        lefts = [item[1]["left"] for item in rects]
+        centers_x = [item[1]["left"] + item[1]["width"] / 2 for item in rects]
+        centers_y = [item[1]["top"] + item[1]["height"] / 2 for item in rects]
+
+        row_drift = max(tops) - min(tops)
+        column_drift = max(lefts) - min(lefts)
+        if row_drift > tolerance and row_drift <= max(item[1]["height"] for item in rects) * 0.45:
+            expected = sorted(tops)[len(tops) // 2]
+            errors.append(
+                {
+                    "type": "alignment_drift",
+                    "severity": "warning",
+                    "nodes": [node.get("id") for node in nodes],
+                    "message": "Repeated nodes appear to share a row but their top edges drift.",
+                    "metrics": {
+                        "role": role,
+                        "expected_edge": round(expected, 2),
+                        "max_drift": round(row_drift, 2),
+                        "axis": "y",
+                    },
+                }
+            )
+        if column_drift > tolerance and column_drift <= max(item[1]["width"] for item in rects) * 0.45:
+            expected = sorted(lefts)[len(lefts) // 2]
+            errors.append(
+                {
+                    "type": "alignment_drift",
+                    "severity": "warning",
+                    "nodes": [node.get("id") for node in nodes],
+                    "message": "Repeated nodes appear to share a column but their left edges drift.",
+                    "metrics": {
+                        "role": role,
+                        "expected_edge": round(expected, 2),
+                        "max_drift": round(column_drift, 2),
+                        "axis": "x",
+                    },
+                }
+            )
+
+        center_x_drift = max(centers_x) - min(centers_x)
+        center_y_drift = max(centers_y) - min(centers_y)
+        if center_x_drift <= tolerance or center_y_drift <= tolerance:
+            continue
+    return errors
+
+
+def _sorted_gaps(nodes, axis):
+    key = "x" if axis == "x" else "y"
+    size = "width" if axis == "x" else "height"
+    ordered = sorted(nodes, key=lambda node: float(node.get(key, 0)))
+    gaps = []
+    for current, following in zip(ordered, ordered[1:]):
+        current_end = float(current.get(key, 0)) + float(current.get(size, 0))
+        gaps.append(float(following.get(key, 0)) - current_end)
+    return gaps
+
+
+def detect_gutter_anomalies(canvas, min_gap=12, variance_threshold=20):
+    errors = []
+    for role, nodes in _role_groups(canvas).items():
+        for axis in ("x", "y"):
+            gaps = [gap for gap in _sorted_gaps(nodes, axis) if gap >= 0]
+            if len(gaps) < 2:
+                continue
+            mean_gap = sum(gaps) / len(gaps)
+            deviations = [abs(gap - mean_gap) for gap in gaps]
+            max_deviation = max(deviations)
+            if max_deviation > variance_threshold or any(0 <= gap < min_gap for gap in gaps):
+                errors.append(
+                    {
+                        "type": "gutter_anomaly",
+                        "severity": "warning",
+                        "nodes": [node.get("id") for node in nodes],
+                        "message": "Repeated nodes have inconsistent gutters or a gutter below minimum.",
+                        "metrics": {
+                            "role": role,
+                            "axis": axis,
+                            "gaps": [round(gap, 2) for gap in gaps],
+                            "mean_gap": round(mean_gap, 2),
+                            "max_deviation": round(max_deviation, 2),
+                        },
+                    }
+                )
+    return errors
+
+
+def _declared_columns(canvas):
+    metadata = canvas.get("layout_metadata", {})
+    columns = metadata.get("columns") or metadata.get("grid_columns") or []
+    anchors = []
+    for column in columns:
+        if isinstance(column, dict):
+            if "x" in column:
+                anchors.append(float(column["x"]))
+            elif "left" in column:
+                anchors.append(float(column["left"]))
+        else:
+            try:
+                anchors.append(float(column))
+            except (TypeError, ValueError):
+                pass
+    return anchors
+
+
+def detect_column_drift(canvas, tolerance=10):
+    errors = []
+    anchors = _declared_columns(canvas)
+    nodes = _detectable_nodes(canvas)
+    if not anchors:
+        for role, role_nodes in _role_groups(canvas).items():
+            lefts = sorted(round(rect(node)["left"], 1) for node in role_nodes)
+            if max(lefts) - min(lefts) <= 48:
+                anchors.append(sorted(lefts)[len(lefts) // 2])
+    if not anchors:
+        return []
+
+    for node in nodes:
+        r = rect(node)
+        nearest = min(anchors, key=lambda anchor: abs(anchor - r["left"]))
+        drift = abs(nearest - r["left"])
+        if drift > tolerance and drift <= 64:
+            errors.append(
+                {
+                    "type": "column_drift",
+                    "severity": "warning",
+                    "nodes": [node.get("id")],
+                    "message": "Node edge drifts from an expected column anchor.",
+                    "metrics": {
+                        "expected_column_x": round(nearest, 2),
+                        "actual_x": round(r["left"], 2),
+                        "drift": round(drift, 2),
+                    },
+                }
+            )
+    return errors
+
+
+def _baseline_value(node):
+    metadata = node.get("metadata", {})
+    if "baseline" in node:
+        return float(node["baseline"])
+    if "baseline" in metadata:
+        return float(metadata["baseline"])
+    return rect(node)["top"]
+
+
+def detect_baseline_mismatch(canvas):
+    metadata = canvas.get("layout_metadata", {})
+    baseline_grid = metadata.get("baseline_grid")
+    if isinstance(baseline_grid, dict):
+        interval = baseline_grid.get("interval") or baseline_grid.get("size")
+    else:
+        interval = baseline_grid
+    if interval is None:
+        return []
+    interval = float(interval)
+    if interval <= 0:
+        return []
+
+    errors = []
+    for node in _detectable_nodes(canvas):
+        if node.get("type") != "text":
+            continue
+        baseline = _baseline_value(node)
+        offset = baseline % interval
+        offset = min(offset, interval - offset)
+        if offset > 1.5:
+            errors.append(
+                {
+                    "type": "baseline_mismatch",
+                    "severity": "warning",
+                    "nodes": [node.get("id")],
+                    "message": "Text baseline does not align to the declared baseline grid.",
+                    "metrics": {"baseline_grid": round(interval, 2), "offset": round(offset, 2)},
+                }
+            )
+    return errors
+
+
+def _font_size(node):
+    for key in ("font_size", "fontSize", "text_size"):
+        if key in node:
+            return float(node[key])
+    metadata = node.get("metadata", {})
+    for key in ("font_size", "fontSize", "text_size"):
+        if key in metadata:
+            return float(metadata[key])
+    role = node.get("role")
+    if role == "title":
+        return min(float(node.get("height", 40)), 64.0)
+    if role == "subtitle":
+        return min(float(node.get("height", 28)), 32.0)
+    if node.get("type") == "text" or role == "body":
+        return 20.0
+    return float(node.get("height", 0))
+
+
+def detect_hierarchy_ambiguity(canvas):
+    text_nodes = [node for node in _detectable_nodes(canvas) if node.get("type") == "text" or node.get("role") in ("title", "subtitle", "body")]
+    errors = []
+    title_nodes = [node for node in text_nodes if node.get("role") == "title" or "title" in str(node.get("id", "")).lower()]
+    large_text = [node for node in text_nodes if _font_size(node) >= 32 or node.get("role") == "title"]
+    if len(large_text) >= 2:
+        sizes = [_font_size(node) for node in large_text]
+        if max(sizes) / max(min(sizes), 1.0) < 1.25:
+            errors.append(
+                {
+                    "type": "hierarchy_ambiguity",
+                    "severity": "uncertain",
+                    "nodes": [node.get("id") for node in large_text[:4]],
+                    "message": "Multiple title-like text nodes compete for primary hierarchy.",
+                    "metrics": {
+                        "competing_nodes": [node.get("id") for node in large_text[:4]],
+                        "size_ratio": round(max(sizes) / max(min(sizes), 1.0), 2),
+                    },
+                }
+            )
+    if title_nodes:
+        title_size = max(_font_size(node) for node in title_nodes)
+        body_like = [node for node in text_nodes if node.get("role") in ("body", "card", "article_card")]
+        if body_like:
+            body_size = max(_font_size(node) for node in body_like)
+            if title_size < body_size:
+                errors.append(
+                    {
+                        "type": "hierarchy_ambiguity",
+                        "severity": "warning",
+                        "nodes": [title_nodes[0].get("id"), body_like[0].get("id")],
+                        "message": "Primary title appears smaller than body or card text.",
+                        "metrics": {"title_size": round(title_size, 2), "body_size": round(body_size, 2)},
+                    }
+                )
+    return errors
+
+
 def summarize(errors):
     summary = {
         "error_count": len(errors),
         "critical_count": 0,
         "warning_count": 0,
         "uncertain_count": 0,
+        "total_overlap_area": 0.0,
+        "total_overflow_distance": 0.0,
+        "total_spacing_violations": 0,
+        "total_alignment_drift": 0.0,
+        "total_gutter_anomaly": 0,
+        "total_grid_snap_error": 0.0,
     }
     for error in errors:
         key = f"{error.get('severity')}_count"
@@ -253,6 +522,24 @@ def summarize(errors):
             summary[key] += 1
         type_key = f"{error.get('type')}_count"
         summary[type_key] = summary.get(type_key, 0) + 1
+        metrics = error.get("metrics", {})
+        if error.get("type") == "overlap":
+            summary["total_overlap_area"] += float(metrics.get("overlap_area", 0))
+        elif error.get("type") in ("out_of_bounds", "text_overflow", "margin_breach"):
+            summary["total_overflow_distance"] += sum(
+                float(value) for value in metrics.values() if isinstance(value, (int, float))
+            )
+        elif error.get("type") == "spacing_violation":
+            summary["total_spacing_violations"] += 1
+        elif error.get("type") == "alignment_drift":
+            summary["total_alignment_drift"] += float(metrics.get("max_drift", 0))
+        elif error.get("type") == "gutter_anomaly":
+            summary["total_gutter_anomaly"] += 1
+        elif error.get("type") == "column_drift":
+            summary["total_grid_snap_error"] += float(metrics.get("drift", 0))
+    for key, value in list(summary.items()):
+        if isinstance(value, float):
+            summary[key] = round(value, 2)
     return summary
 
 
@@ -264,6 +551,11 @@ def detect_layout_errors(canvas):
     errors.extend(detect_spacing_violations(canvas))
     errors.extend(detect_text_overflows(canvas))
     errors.extend(detect_image_caption_detachment(canvas))
+    errors.extend(detect_alignment_drift(canvas))
+    errors.extend(detect_gutter_anomalies(canvas))
+    errors.extend(detect_column_drift(canvas))
+    errors.extend(detect_baseline_mismatch(canvas))
+    errors.extend(detect_hierarchy_ambiguity(canvas))
     errors.extend(detect_semantic_role_uncertainty(canvas))
     return {"errors": errors, "summary": summarize(errors)}
 

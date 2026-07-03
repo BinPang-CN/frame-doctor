@@ -1,8 +1,10 @@
 {
   "readability": 0.9,
   "visual_impact": 0.4,
-  "content_preservation": 0.9,
+  "density": 0.45,
   "grid_strictness": 0.7,
   "editability": 0.8,
+  "content_preservation": 0.9,
+  "semantic_fidelity": 0.9,
   "only_fix_hard_errors": 0.0
 }

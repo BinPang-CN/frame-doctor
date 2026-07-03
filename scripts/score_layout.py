@@ -5,7 +5,10 @@ import argparse
 import json
 import sys
 
-from detect_layout_errors import detect_layout_errors, load_canvas
+try:
+    from detect_layout_errors import detect_layout_errors, load_canvas
+except ModuleNotFoundError:
+    from scripts.detect_layout_errors import detect_layout_errors, load_canvas
 
 
 def score_layout(canvas):
@@ -17,6 +20,11 @@ def score_layout(canvas):
     text_overflow_count = summary.get("text_overflow_count", 0)
     margin_breach_count = summary.get("margin_breach_count", 0)
     image_caption_detachment_count = summary.get("image_caption_detachment_count", 0)
+    alignment_drift_count = summary.get("alignment_drift_count", 0)
+    gutter_anomaly_count = summary.get("gutter_anomaly_count", 0)
+    column_drift_count = summary.get("column_drift_count", 0)
+    baseline_mismatch_count = summary.get("baseline_mismatch_count", 0)
+    hierarchy_ambiguity_count = summary.get("hierarchy_ambiguity_count", 0)
     uncertain_count = summary.get("semantic_role_uncertainty_count", 0)
 
     penalty = (
@@ -26,6 +34,11 @@ def score_layout(canvas):
         + margin_breach_count * 4
         + spacing_violation_count * 5
         + image_caption_detachment_count * 5
+        + alignment_drift_count * 4
+        + gutter_anomaly_count * 4
+        + column_drift_count * 3
+        + baseline_mismatch_count * 3
+        + hierarchy_ambiguity_count * 5
         + uncertain_count * 2
     )
     score = max(0, 100 - penalty)
@@ -38,6 +51,11 @@ def score_layout(canvas):
         "text_overflow_count": text_overflow_count,
         "margin_breach_count": margin_breach_count,
         "image_caption_detachment_count": image_caption_detachment_count,
+        "alignment_drift_count": alignment_drift_count,
+        "gutter_anomaly_count": gutter_anomaly_count,
+        "column_drift_count": column_drift_count,
+        "baseline_mismatch_count": baseline_mismatch_count,
+        "hierarchy_ambiguity_count": hierarchy_ambiguity_count,
         "error_count": summary.get("error_count", 0),
     }
 

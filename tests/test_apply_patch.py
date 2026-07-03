@@ -114,6 +114,15 @@ class ApplyPatchTest(unittest.TestCase):
             ["step_01"],
         )
 
+    def test_forbidden_operations_are_rejected(self):
+        canvas = {
+            "frame": {"id": "test", "width": 400, "height": 300},
+            "nodes": [{"id": "a", "role": "text", "x": 0, "y": 0, "width": 100, "height": 40}],
+        }
+        for op in ("delete_content", "rewrite_text", "replace_image", "change_brand_style", "flatten_editable_layers"):
+            with self.assertRaises(ValueError):
+                apply_patch_to_canvas(canvas, {"operations": [{"op": op, "node_id": "a"}]})
+
 
 if __name__ == "__main__":
     unittest.main()
