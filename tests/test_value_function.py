@@ -1,5 +1,7 @@
 import unittest
 
+from scripts.apply_patch_to_json import apply_patch_to_canvas
+from scripts.detect_layout_errors import detect_layout_errors, load_canvas
 from scripts.propose_layout_patch import propose_layout_patch
 from scripts.value_function import normalize_profile, rank_candidates
 
@@ -92,6 +94,39 @@ class ValueFunctionTest(unittest.TestCase):
         }
         proposal = propose_layout_patch(canvas, {"readability": 0.9})
         self.assertTrue(proposal["recommended_patch"]["value_tradeoffs"]["human_confirmation_required"])
+
+    def test_minimal_fix_repairs_existing_demo_critical_overlaps(self):
+        canvas = load_canvas("assets/demo_cases/case_01_ppt_content_before.json")
+        proposal = propose_layout_patch(canvas, {"only_fix_hard_errors": 0.9, "content_preservation": 0.95, "semantic_fidelity": 0.95})
+        self.assertEqual(proposal["recommended_patch"]["pattern"], "minimal_fix")
+        repaired = apply_patch_to_canvas(canvas, proposal["recommended_patch"])
+        report = detect_layout_errors(repaired)
+        critical_overlaps = [
+            error
+            for error in report["errors"]
+            if error.get("severity") == "critical" and error.get("type") == "overlap"
+        ]
+        self.assertEqual(critical_overlaps, [])
+
+    def test_minimal_fix_handles_tight_body_image_caption_overlap(self):
+        canvas = {
+            "frame": {"id": "tight", "width": 420, "height": 260},
+            "nodes": [
+                {"id": "body", "role": "body", "type": "text", "x": 24, "y": 40, "width": 240, "height": 150, "text": "Body"},
+                {"id": "image", "role": "image", "type": "image", "x": 160, "y": 70, "width": 220, "height": 170},
+                {"id": "caption", "role": "caption", "type": "text", "x": 180, "y": 210, "width": 180, "height": 32, "text": "Caption"},
+            ],
+        }
+        proposal = propose_layout_patch(canvas, {"only_fix_hard_errors": 0.9, "content_preservation": 0.95})
+        self.assertEqual(proposal["recommended_patch"]["pattern"], "minimal_fix")
+        repaired = apply_patch_to_canvas(canvas, proposal["recommended_patch"])
+        report = detect_layout_errors(repaired)
+        critical_overlaps = [
+            error
+            for error in report["errors"]
+            if error.get("severity") == "critical" and error.get("type") == "overlap"
+        ]
+        self.assertEqual(critical_overlaps, [])
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 """Propose a rule-based Frame Doctor layout patch."""
 
 import argparse
+import copy
 import json
 import sys
 
@@ -279,69 +280,271 @@ def _default_auto_layout_direction(group_role):
     return "vertical"
 
 
-def build_minimal_fix_patch(canvas, conflicts):
+def _frame_size(canvas):
     frame = canvas.get("frame", {})
-    frame_width = float(frame.get("width", 0))
-    frame_height = float(frame.get("height", 0))
-    nodes = {node.get("id"): node for node in canvas.get("nodes", [])}
-    operations = []
-    moved = set()
+    return float(frame.get("width", 0)), float(frame.get("height", 0))
 
-    for error in conflicts.get("errors", []):
-        error_type = error.get("type")
-        if error_type not in ("overlap", "out_of_bounds", "text_overflow", "margin_breach"):
+
+def _rect_from_node(node):
+    return {
+        "left": float(node.get("x", 0)),
+        "top": float(node.get("y", 0)),
+        "right": float(node.get("x", 0)) + float(node.get("width", 0)),
+        "bottom": float(node.get("y", 0)) + float(node.get("height", 0)),
+        "width": float(node.get("width", 0)),
+        "height": float(node.get("height", 0)),
+    }
+
+
+def _critical_geometry_errors(canvas):
+    return [
+        error
+        for error in detect_layout_errors(canvas).get("errors", [])
+        if error.get("severity") == "critical"
+        and error.get("type") in ("overlap", "out_of_bounds", "text_overflow")
+    ]
+
+
+def _critical_overlap_count(canvas):
+    return sum(1 for error in _critical_geometry_errors(canvas) if error.get("type") == "overlap")
+
+
+def _total_critical_overlap_area(canvas):
+    total = 0.0
+    for error in _critical_geometry_errors(canvas):
+        if error.get("type") == "overlap":
+            total += float(error.get("metrics", {}).get("overlap_area", 0))
+    return total
+
+
+def _clamp_geometry(x, y, width, height, frame_width, frame_height, min_size=24):
+    width = max(min_size, min(float(width), frame_width))
+    height = max(min_size, min(float(height), frame_height))
+    x = min(max(0.0, float(x)), max(0.0, frame_width - width))
+    y = min(max(0.0, float(y)), max(0.0, frame_height - height))
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
+def _fit_size(node, max_width, max_height):
+    width = float(node.get("width", 0))
+    height = float(node.get("height", 0))
+    max_width = max(24.0, float(max_width))
+    max_height = max(24.0, float(max_height))
+    if node.get("type") == "image":
+        scale = min(1.0, max_width / max(width, 1.0), max_height / max(height, 1.0))
+        return max(24.0, width * scale), max(24.0, height * scale)
+    return min(width, max_width), min(height, max_height)
+
+
+def _set_node_geometry(node, geometry):
+    for key in ("x", "y", "width", "height"):
+        node[key] = round(float(geometry[key]), 2)
+
+
+def _movement_cost(original, geometry):
+    return (
+        abs(float(original.get("x", 0)) - geometry["x"])
+        + abs(float(original.get("y", 0)) - geometry["y"])
+        + abs(float(original.get("width", 0)) - geometry["width"]) * 0.4
+        + abs(float(original.get("height", 0)) - geometry["height"]) * 0.4
+    )
+
+
+def _candidate_score(canvas, node_id, geometry, original_node):
+    trial = copy.deepcopy(canvas)
+    trial_node = {node.get("id"): node for node in trial.get("nodes", [])}.get(node_id)
+    if not trial_node:
+        return float("inf")
+    _set_node_geometry(trial_node, geometry)
+    critical = _critical_geometry_errors(trial)
+    return len(critical) * 1000000 + _total_critical_overlap_area(trial) + _movement_cost(original_node, geometry)
+
+
+def _movable_priority(node):
+    role = node.get("role")
+    if role == "caption":
+        return 70
+    if node.get("type") == "image" or role in ("image", "chart", "card", "product_card"):
+        return 60
+    if role in ("body", "subtitle"):
+        return 30
+    if role == "title":
+        return 10
+    return 40
+
+
+def _choose_movable(a, b):
+    return (a, b) if _movable_priority(a) >= _movable_priority(b) else (b, a)
+
+
+def _caption_candidates(caption, image, frame_width, frame_height, gap=24):
+    image_rect = _rect_from_node(image)
+    cap_width = min(float(caption.get("width", 0)), frame_width)
+    cap_height = min(float(caption.get("height", 0)), frame_height)
+    candidates = []
+
+    if image_rect["bottom"] + gap + cap_height <= frame_height:
+        candidates.append(_clamp_geometry(image_rect["left"], image_rect["bottom"] + gap, min(cap_width, image_rect["width"]), cap_height, frame_width, frame_height))
+    if image_rect["top"] - gap - cap_height >= 0:
+        candidates.append(_clamp_geometry(image_rect["left"], image_rect["top"] - gap - cap_height, min(cap_width, image_rect["width"]), cap_height, frame_width, frame_height))
+    if image_rect["right"] + gap + cap_width <= frame_width:
+        candidates.append(_clamp_geometry(image_rect["right"] + gap, image_rect["top"], cap_width, cap_height, frame_width, frame_height))
+    if image_rect["left"] - gap - cap_width >= 0:
+        candidates.append(_clamp_geometry(image_rect["left"] - gap - cap_width, image_rect["top"], cap_width, cap_height, frame_width, frame_height))
+    if not candidates:
+        candidates.append(
+            _clamp_geometry(caption.get("x", 0), frame_height - cap_height, cap_width, cap_height, frame_width, frame_height)
+        )
+    return candidates
+
+
+def _overlap_resolution_candidates(movable, anchor, frame_width, frame_height, gap=24):
+    anchor_rect = _rect_from_node(anchor)
+    width = float(movable.get("width", 0))
+    height = float(movable.get("height", 0))
+    x = float(movable.get("x", 0))
+    y = float(movable.get("y", 0))
+    candidates = []
+
+    if movable.get("role") == "caption" and anchor.get("role") in ("image", "chart"):
+        return _caption_candidates(movable, anchor, frame_width, frame_height, gap)
+
+    max_width_right = frame_width - (anchor_rect["right"] + gap)
+    if max_width_right >= 24:
+        fit_width, fit_height = _fit_size(movable, max_width_right, frame_height)
+        candidates.append(_clamp_geometry(anchor_rect["right"] + gap, y, fit_width, fit_height, frame_width, frame_height))
+
+    max_height_below = frame_height - (anchor_rect["bottom"] + gap)
+    if max_height_below >= 24:
+        fit_width, fit_height = _fit_size(movable, frame_width, max_height_below)
+        candidates.append(_clamp_geometry(x, anchor_rect["bottom"] + gap, fit_width, fit_height, frame_width, frame_height))
+
+    if anchor_rect["top"] - gap >= 24:
+        fit_width, fit_height = _fit_size(movable, frame_width, anchor_rect["top"] - gap)
+        candidates.append(_clamp_geometry(x, anchor_rect["top"] - gap - fit_height, fit_width, fit_height, frame_width, frame_height))
+
+    if anchor_rect["left"] - gap >= 24:
+        fit_width, fit_height = _fit_size(movable, anchor_rect["left"] - gap, frame_height)
+        candidates.append(_clamp_geometry(anchor_rect["left"] - gap - fit_width, y, fit_width, fit_height, frame_width, frame_height))
+
+    candidates.append(_clamp_geometry(frame_width - width, y, width, height, frame_width, frame_height))
+    candidates.append(_clamp_geometry(x, frame_height - height, width, height, frame_width, frame_height))
+    return candidates
+
+
+def _resolve_overlap_once(working, error):
+    nodes = {node.get("id"): node for node in working.get("nodes", [])}
+    node_ids = error.get("nodes", [])
+    if len(node_ids) < 2:
+        return False
+    a = nodes.get(node_ids[0])
+    b = nodes.get(node_ids[1])
+    if not a or not b:
+        return False
+    movable, anchor = _choose_movable(a, b)
+    frame_width, frame_height = _frame_size(working)
+    candidates = _overlap_resolution_candidates(movable, anchor, frame_width, frame_height)
+    if not candidates:
+        return False
+    best = min(candidates, key=lambda geometry: _candidate_score(working, movable.get("id"), geometry, movable))
+    before = _critical_overlap_count(working)
+    before_area = _total_critical_overlap_area(working)
+    trial = copy.deepcopy(working)
+    trial_node = {node.get("id"): node for node in trial.get("nodes", [])}.get(movable.get("id"))
+    _set_node_geometry(trial_node, best)
+    after = _critical_overlap_count(trial)
+    after_area = _total_critical_overlap_area(trial)
+    if after < before or after_area < before_area:
+        _set_node_geometry(movable, best)
+        return True
+    return False
+
+
+def _resolve_bounds_and_text(working, error):
+    nodes = {node.get("id"): node for node in working.get("nodes", [])}
+    frame_width, frame_height = _frame_size(working)
+    node = nodes.get(error.get("nodes", [None])[0])
+    if not node:
+        return False
+    if error.get("type") == "out_of_bounds":
+        geometry = _clamp_geometry(node.get("x", 0), node.get("y", 0), node.get("width", 0), node.get("height", 0), frame_width, frame_height)
+        _set_node_geometry(node, geometry)
+        return True
+    if error.get("type") == "text_overflow":
+        needed = error.get("metrics", {}).get("estimated_height", node.get("height", 0))
+        geometry = _clamp_geometry(node.get("x", 0), node.get("y", 0), node.get("width", 0), min(float(needed), frame_height), frame_width, frame_height)
+        _set_node_geometry(node, geometry)
+        return True
+    return False
+
+
+def _resolve_caption_detachment_once(working, error):
+    nodes = {node.get("id"): node for node in working.get("nodes", [])}
+    node_ids = error.get("nodes", [])
+    if len(node_ids) < 2:
+        return False
+    image = nodes.get(node_ids[0])
+    caption = nodes.get(node_ids[1])
+    if not image or not caption:
+        return False
+    frame_width, frame_height = _frame_size(working)
+    candidates = _caption_candidates(caption, image, frame_width, frame_height)
+    if not candidates:
+        return False
+    best = min(candidates, key=lambda geometry: _candidate_score(working, caption.get("id"), geometry, caption))
+    trial = copy.deepcopy(working)
+    trial_caption = {node.get("id"): node for node in trial.get("nodes", [])}.get(caption.get("id"))
+    _set_node_geometry(trial_caption, best)
+    if not _critical_geometry_errors(trial):
+        _set_node_geometry(caption, best)
+        return True
+    return False
+
+
+def _final_operations_from_working(original_canvas, working_canvas):
+    original_nodes = {node.get("id"): node for node in original_canvas.get("nodes", [])}
+    operations = []
+    for node in working_canvas.get("nodes", []):
+        original = original_nodes.get(node.get("id"))
+        if not original:
             continue
-        if error_type == "out_of_bounds":
-            node = nodes.get(error.get("nodes", [None])[0])
-            if not node:
-                continue
-            x = min(max(float(node.get("x", 0)), 0), max(0.0, frame_width - float(node.get("width", 0))))
-            y = min(max(float(node.get("y", 0)), 0), max(0.0, frame_height - float(node.get("height", 0))))
-            operations.append(_move(node, x, y, node.get("width", 0), node.get("height", 0)))
-            moved.add(node.get("id"))
-        elif error_type == "text_overflow":
-            node = nodes.get(error.get("nodes", [None])[0])
-            if not node:
-                continue
-            needed = error.get("metrics", {}).get("estimated_height", node.get("height", 0))
-            operations.append(
-                {
-                    "op": "resize_text_box",
-                    "node_id": node.get("id"),
-                    "width": node.get("width", 0),
-                    "height": round(min(max(float(needed), float(node.get("height", 0))), frame_height)),
-                }
-            )
-        elif error_type == "overlap":
-            involved = error.get("nodes", [])
-            if len(involved) < 2:
-                continue
-            node = nodes.get(involved[1])
-            anchor = nodes.get(involved[0])
-            if not node or not anchor or node.get("id") in moved:
-                continue
-            y = min(
-                max(0.0, float(anchor.get("y", 0)) + float(anchor.get("height", 0)) + 24),
-                max(0.0, frame_height - float(node.get("height", 0))),
-            )
-            operations.append(_move(node, node.get("x", 0), y, node.get("width", 0), node.get("height", 0)))
-            moved.add(node.get("id"))
-        elif error_type == "margin_breach":
-            node = nodes.get(error.get("nodes", [None])[0])
-            if not node or node.get("id") in moved:
-                continue
-            margin = float(frame.get("safe_margin", canvas.get("layout_metadata", {}).get("safe_margin", 24)))
-            x = min(max(float(node.get("x", 0)), margin), max(margin, frame_width - margin - float(node.get("width", 0))))
-            y = min(max(float(node.get("y", 0)), margin), max(margin, frame_height - margin - float(node.get("height", 0))))
-            operations.append(_move(node, x, y, node.get("width", 0), node.get("height", 0)))
-            moved.add(node.get("id"))
+        changed = any(abs(float(node.get(key, 0)) - float(original.get(key, 0))) > 0.01 for key in ("x", "y", "width", "height"))
+        if changed:
+            operations.append(_move(node, node.get("x", 0), node.get("y", 0), node.get("width", 0), node.get("height", 0)))
+    return operations
+
+
+def build_minimal_fix_patch(canvas, conflicts):
+    working = copy.deepcopy(canvas)
+    for _ in range(8):
+        critical_errors = _critical_geometry_errors(working)
+        if not critical_errors:
+            break
+        changed = False
+        for error in critical_errors:
+            if error.get("type") == "overlap":
+                changed = _resolve_overlap_once(working, error) or changed
+            else:
+                changed = _resolve_bounds_and_text(working, error) or changed
+        if not changed:
+            break
+
+    remaining = _critical_geometry_errors(working)
+    if remaining:
+        for error in remaining:
+            if error.get("type") == "overlap":
+                _resolve_overlap_once(working, error)
+    if not _critical_geometry_errors(working):
+        for error in detect_layout_errors(working).get("errors", []):
+            if error.get("type") == "image_caption_detachment":
+                _resolve_caption_detachment_once(working, error)
 
     return {
         "version": "1.0",
         "patch_id": "patch_minimal_fix_001",
         "pattern": "minimal_fix",
         "rationale": "Only resolve critical objective errors while preserving existing layout decisions.",
-        "operations": operations,
+        "operations": _final_operations_from_working(canvas, working),
     }
 
 
