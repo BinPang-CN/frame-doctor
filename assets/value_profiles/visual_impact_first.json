@@ -1,0 +1,8 @@
+{
+  "readability": 0.6,
+  "visual_impact": 0.9,
+  "content_preservation": 0.6,
+  "grid_strictness": 0.6,
+  "editability": 0.5,
+  "only_fix_hard_errors": 0.0
+}

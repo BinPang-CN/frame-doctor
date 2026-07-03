@@ -1,0 +1,73 @@
+{
+  "frame": {
+    "id": "mobile_01",
+    "width": 390,
+    "height": 844
+  },
+  "nodes": [
+    {
+      "id": "screen_title",
+      "type": "text",
+      "role": "title",
+      "x": 20,
+      "y": 24,
+      "width": 240,
+      "height": 40,
+      "text": "LearnBuddy"
+    },
+    {
+      "id": "search",
+      "type": "control",
+      "role": "search",
+      "x": 20,
+      "y": 78,
+      "width": 350,
+      "height": 44
+    },
+    {
+      "id": "tabs",
+      "type": "control",
+      "role": "tabs",
+      "x": 20,
+      "y": 138,
+      "width": 350,
+      "height": 44
+    },
+    {
+      "id": "lesson_card_01",
+      "type": "panel",
+      "role": "card",
+      "x": 20,
+      "y": 210,
+      "width": 350,
+      "height": 168
+    },
+    {
+      "id": "lesson_card_02",
+      "type": "panel",
+      "role": "card",
+      "x": 20,
+      "y": 350,
+      "width": 350,
+      "height": 168
+    },
+    {
+      "id": "lesson_card_03",
+      "type": "panel",
+      "role": "card",
+      "x": 20,
+      "y": 500,
+      "width": 350,
+      "height": 168
+    },
+    {
+      "id": "bottom_nav",
+      "type": "navigation",
+      "role": "navigation",
+      "x": 0,
+      "y": 812,
+      "width": 390,
+      "height": 88
+    }
+  ]
+}

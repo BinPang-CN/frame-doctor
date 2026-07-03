@@ -1,0 +1,73 @@
+{
+  "frame": {
+    "id": "dashboard_01",
+    "width": 1920,
+    "height": 1080
+  },
+  "nodes": [
+    {
+      "id": "dashboard_title",
+      "type": "text",
+      "role": "title",
+      "x": 48,
+      "y": 36,
+      "width": 780,
+      "height": 64,
+      "text": "Revenue Health"
+    },
+    {
+      "id": "date_filter",
+      "type": "control",
+      "role": "navigation",
+      "x": 1480,
+      "y": 56,
+      "width": 360,
+      "height": 52
+    },
+    {
+      "id": "kpi_revenue",
+      "type": "panel",
+      "role": "card",
+      "x": 60,
+      "y": 150,
+      "width": 420,
+      "height": 148
+    },
+    {
+      "id": "kpi_pipeline",
+      "type": "panel",
+      "role": "card",
+      "x": 500,
+      "y": 150,
+      "width": 380,
+      "height": 148
+    },
+    {
+      "id": "kpi_churn",
+      "type": "panel",
+      "role": "card",
+      "x": 895,
+      "y": 154,
+      "width": 440,
+      "height": 132
+    },
+    {
+      "id": "kpi_nrr",
+      "type": "panel",
+      "role": "card",
+      "x": 1320,
+      "y": 150,
+      "width": 430,
+      "height": 148
+    },
+    {
+      "id": "main_chart",
+      "type": "chart",
+      "role": "chart",
+      "x": 80,
+      "y": 250,
+      "width": 1760,
+      "height": 690
+    }
+  ]
+}

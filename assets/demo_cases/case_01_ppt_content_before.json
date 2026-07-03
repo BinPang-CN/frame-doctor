@@ -1,0 +1,49 @@
+{
+  "frame": {
+    "id": "slide_01",
+    "width": 1920,
+    "height": 1080
+  },
+  "nodes": [
+    {
+      "id": "title",
+      "type": "text",
+      "role": "title",
+      "x": 96,
+      "y": 72,
+      "width": 1200,
+      "height": 80,
+      "text": "Quarterly Launch Readiness"
+    },
+    {
+      "id": "body",
+      "type": "text",
+      "role": "body",
+      "x": 112,
+      "y": 240,
+      "width": 980,
+      "height": 520,
+      "text": "Launch readiness depends on a clear narrative, visible risk ownership, and enough spacing for stakeholders to scan the plan without losing the relationship between roadmap, metrics, and next actions."
+    },
+    {
+      "id": "image",
+      "type": "image",
+      "role": "image",
+      "x": 860,
+      "y": 300,
+      "width": 900,
+      "height": 560,
+      "source": "launch-dashboard-screenshot.png"
+    },
+    {
+      "id": "caption",
+      "type": "text",
+      "role": "caption",
+      "x": 920,
+      "y": 840,
+      "width": 720,
+      "height": 48,
+      "text": "Draft readiness view, captured before executive review."
+    }
+  ]
+}
